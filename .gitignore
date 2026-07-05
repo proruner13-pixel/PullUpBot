@@ -1,0 +1,26 @@
+.vercel
+
+# Secrets and local environment
+.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+venv/
+.venv/
+
+# Frontend
+node_modules/
+dist/
+*.local
+
+# IDE and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
+my-sport-app/public/images/453901280_456240447.mp4

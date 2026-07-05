@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: pullup-backend
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn app.main:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    autoDeployTrigger: commit
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.5
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: BOT_TOKEN
+        sync: false
+      - key: WEBAPP_URL
+        value: https://pullupbot.vercel.app
+      - key: CORS_ORIGINS
+        value: https://pullupbot.vercel.app
+      - key: ADMIN_ID
+        sync: false
+      - key: TELEGRAM_AUTH_MAX_AGE
+        value: "86400"

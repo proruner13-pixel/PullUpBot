@@ -1,0 +1,2 @@
+# Cloud backend services install the canonical backend dependency list.
+-r backend/requirements.txt
