@@ -174,30 +174,6 @@ def _validate_production_url(name: str, value: str) -> None:
         raise RuntimeError(f"{name} не может указывать на localhost в production")
 
 
-def _validate_database_url(value: str) -> None:
-    try:
-        parsed = urlsplit(value)
-        parsed.port
-    except ValueError as exc:
-        raise RuntimeError(
-            "DATABASE_URL должен быть корректным PostgreSQL URL"
-        ) from exc
-
-    hostname = (parsed.hostname or "").lower()
-    if (
-        parsed.scheme not in {"postgres", "postgresql"}
-        or not hostname
-        or not parsed.path.strip("/")
-    ):
-        raise RuntimeError(
-            "DATABASE_URL должен быть корректным PostgreSQL URL"
-        )
-    if hostname in {"localhost", "127.0.0.1", "::1"}:
-        raise RuntimeError(
-            "DATABASE_URL не может указывать на localhost в production"
-        )
-
-
 @dataclass(frozen=True, slots=True)
 class Settings:
     app_name: str
@@ -219,7 +195,7 @@ class Settings:
             bot_token = ""
 
         origins = tuple(
-            origin.strip().rstrip("/")
+            origin.strip()
             for origin in os.getenv(
                 "CORS_ORIGINS",
                 "http://localhost:5173,https://pullupbot.vercel.app",
@@ -248,6 +224,10 @@ class Settings:
             for origin in settings.cors_origins:
                 _validate_production_url("CORS_ORIGINS", origin)
 
-            _validate_database_url(settings.database_dsn)
+            database_host = (urlsplit(settings.database_dsn).hostname or "").lower()
+            if database_host in {"localhost", "127.0.0.1", "::1"}:
+                raise RuntimeError(
+                    "DATABASE_URL не может указывать на localhost в production"
+                )
 
         return settings
