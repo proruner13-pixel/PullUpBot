@@ -39,10 +39,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=list(app_settings.cors_origins),
-        allow_credentials=False,
-        allow_methods=["GET", "POST", "PATCH", "OPTIONS"],
-        allow_headers=["Authorization", "Content-Type"],
+        allow_origins=[
+            "https://pullupbot.vercel.app",
+            "https://pullup-backend-dtxl.onrender.com",
+            "http://localhost:5173",
+            "http://localhost:3000",
+        ],
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
     )
 
     application.include_router(health.router, prefix="/api")
