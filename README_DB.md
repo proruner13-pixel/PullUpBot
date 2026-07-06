@@ -150,7 +150,7 @@ DATABASE_URL=postgresql://postgres:password@localhost:5432/pullup
 Для frontend:
 
 ```env
-VITE_API_URL=http://localhost:8000
+VITE_API_URL=https://pullup-backend-dtxl.onrender.com
 ```
 
 Если `VITE_API_URL` не указан, frontend продолжает работать локально через

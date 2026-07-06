@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
     Activity,
@@ -392,6 +392,7 @@ function Dashboard({
     onOpenNotifications,
     onOpenChallenge,
     onOpenSite,
+    onLogoClick,
 }: {
     user: ApiUser;
     gameUser: GameUser;
@@ -405,6 +406,7 @@ function Dashboard({
     onOpenNotifications: () => void;
     onOpenChallenge: (challenge: ApiChallenge) => void;
     onOpenSite: () => void;
+    onLogoClick: () => void;
 }) {
     const overall = challenges.length
         ? Math.round(
@@ -427,7 +429,13 @@ function Dashboard({
                 >
                     <Menu size={20} />
                 </button>
-                <span className="brand">PULLUP</span>
+                <span
+                    className="brand"
+                    onClick={onLogoClick}
+                    style={{ cursor: "pointer", userSelect: "none" }}
+                >
+                    PULLUP
+                </span>
                 <button
                     className="icon-button"
                     aria-label="Уведомления"
@@ -1686,6 +1694,7 @@ export default function App() {
                         }
                         onOpenChallenge={setSelectedChallenge}
                         onOpenSite={handleOpenSite}
+                        onLogoClick={handlePullupLogoClick}
                     />
                 );
             case "challenges":
@@ -1821,95 +1830,79 @@ export default function App() {
         level: user?.level ?? null,
         lastAuthError: error,
     };
+    const [showAuthDebug, setShowAuthDebug] = useState(false);
+    const [authDebugTapCount, setAuthDebugTapCount] = useState(0);
+    const lastAuthDebugTapRef = useRef(0);
 
-    const authDebugPanel = (
+    const handlePullupLogoClick = () => {
+        const now = Date.now();
+
+        if (now - lastAuthDebugTapRef.current > 2000) {
+            setAuthDebugTapCount(1);
+            lastAuthDebugTapRef.current = now;
+            return;
+        }
+
+        setAuthDebugTapCount((prev) => {
+            const next = prev + 1;
+
+            if (next >= 7) {
+                setShowAuthDebug((current) => !current);
+                return 0;
+            }
+
+            return next;
+        });
+
+        lastAuthDebugTapRef.current = now;
+    };
+    const authDebugPanel = showAuthDebug ? (
         <div className="auth-debug-panel">
             <b>AUTH DEBUG · {authDebug.mode}</b>
             <span>profileSource: {authDebug.profileSource}</span>
             <span>authStatus: {authDebug.authStatus}</span>
             <span>currentUrl: {authDebug.currentUrl}</span>
             <span>userAgent: {authDebug.userAgent}</span>
-            <span>
-                isTelegramWebViewPossible:{" "}
-                {String(authDebug.isTelegramWebViewPossible)}
-            </span>
+            <span>isTelegramWebViewPossible: {String(authDebug.isTelegramWebViewPossible)}</span>
             <span>hasTelegramScript: {String(authDebug.hasTelegramScript)}</span>
             <span>windowTelegramType: {authDebug.windowTelegramType}</span>
             <span>webAppVersion: {authDebug.webAppVersion}</span>
             <span>platform: {authDebug.platform}</span>
             <span>colorScheme: {authDebug.colorScheme}</span>
-            <span>
-                hasWindowTelegram:{" "}
-                {String(authDebug.hasWindowTelegram)}
-            </span>
-            <span>
-                hasTelegramWebApp:{" "}
-                {String(authDebug.hasTelegramWebApp)}
-            </span>
+            <span>hasWindowTelegram: {String(authDebug.hasWindowTelegram)}</span>
+            <span>hasTelegramWebApp: {String(authDebug.hasTelegramWebApp)}</span>
             <span>hasInitData: {String(authDebug.hasInitData)}</span>
             <span>initDataLength: {authDebug.initDataLength}</span>
-            <span>
-                hasInitDataUnsafeUser:{" "}
-                {String(authDebug.hasInitDataUnsafeUser)}
-            </span>
-            <span>
-                telegramUser.id:{" "}
-                {authDebug.telegramUserId ?? "не получен"}
-            </span>
-            <span>
-                telegramUser.username: @
-                {authDebug.telegramUsername || "не получен"}
-            </span>
-            <span>
-                backendUser.telegram_id:{" "}
-                {authDebug.backendTelegramId ?? "не получен"}
-            </span>
-            <span>
-                backendUser.username: @
-                {authDebug.backendUsername || "не получен"}
-            </span>
-            <span>
-                displayedUser.telegram_id:{" "}
-                {authDebug.displayedTelegramId ?? "не получен"}
-            </span>
-            <span>
-                displayedUser.username: @
-                {authDebug.displayedUsername || "не получен"}
-            </span>
+            <span>hasInitDataUnsafeUser: {String(authDebug.hasInitDataUnsafeUser)}</span>
+            <span>telegramUser.id: {authDebug.telegramUserId ?? "не получен"}</span>
+            <span>telegramUser.username: @{authDebug.telegramUsername || "не получен"}</span>
+            <span>backendUser.telegram_id: {authDebug.backendTelegramId ?? "не получен"}</span>
+            <span>backendUser.username: @{authDebug.backendUsername || "не получен"}</span>
+            <span>displayedUser.telegram_id: {authDebug.displayedTelegramId ?? "не получен"}</span>
+            <span>displayedUser.username: @{authDebug.displayedUsername || "не получен"}</span>
             <span>VITE_API_URL: {authDebug.apiBaseUrl}</span>
             <span>apiUrlSource: {authDebug.apiUrlSource}</span>
-            <span>
-                apiUrlError: {authDebug.apiConfigurationError || "нет"}
-            </span>
+            <span>apiUrlError: {authDebug.apiConfigurationError || "нет"}</span>
             <span>apiHealthStatus: {authDebug.apiHealthStatus}</span>
-            <span>
-                apiHealthError: {authDebug.apiHealthError || "нет"}
-            </span>
-            <span>
-                apiHealthResponse:{" "}
-                {authDebug.apiHealthResponse || "нет"}
-            </span>
+            <span>apiHealthError: {authDebug.apiHealthError || "нет"}</span>
+            <span>apiHealthResponse: {authDebug.apiHealthResponse || "нет"}</span>
             <span>backendUser: {authDebug.backendUser}</span>
             <span>displayedUser: {authDebug.displayedUser}</span>
-            <span>
-                telegram_id: {authDebug.telegramId ?? "не получен"}
-            </span>
+            <span>telegram_id: {authDebug.telegramId ?? "не получен"}</span>
             <span>username: @{authDebug.username || "не получен"}</span>
             <span>first_name: {authDebug.firstName || "не получен"}</span>
             <span>tokens: {authDebug.tokens ?? "не получены"}</span>
             <span>level: {authDebug.level ?? "не получен"}</span>
-            <span>
-                lastAuthError: {authDebug.lastAuthError || "нет"}
-            </span>
+            <span>lastAuthError: {authDebug.lastAuthError || "нет"}</span>
+
             {!authDebug.hasTelegramWebApp && (
                 <span>
-                    Telegram WebApp объект не найден. Проверь, что приложение
-                    открыто через InlineKeyboardButton(web_app=WebAppInfo(...)),
-                    а не через обычную url-кнопку.
+                    Telegram WebApp объект не найден. Проверь, что приложение открыто через
+                    InlineKeyboardButton(web_app=WebAppInfo(...)), а не через обычную url-кнопку.
                 </span>
             )}
         </div>
-    );
+    ) : null;
 
     if (loading) {
         return (

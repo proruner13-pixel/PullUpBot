@@ -63,7 +63,7 @@ export interface LeaderboardEntryDto {
 const CONFIGURED_API_URL = (import.meta.env.VITE_API_URL ?? "")
     .trim()
     .replace(/\/$/, "");
-const DEV_API_FALLBACK = "http://localhost:8000";
+const DEV_API_FALLBACK = "https://pullup-backend-dtxl.onrender.com";
 
 function isLocalApiUrl(url: string): boolean {
     if (!url) return false;
