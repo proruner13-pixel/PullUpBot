@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo,useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
     Activity,
@@ -312,8 +312,8 @@ function ChallengeCard({
                 <div className="challenge-heading">
                     <div>
                         <h3>{visual.label}</h3>
-                        <p>
-                            {challenge.progress} / {challenge.goal}{" "}
+                        <p className="text-sm text-muted">
+                            {challenge.progress} / {challenge.goal} {" "}
                             {challenge.exercise === "running"
                                 ? "км"
                                 : challenge.exercise === "plank"
@@ -331,8 +331,8 @@ function ChallengeCard({
                     />
                 </div>
                 <div className="challenge-meta">
-                    <span>{value}% выполнено</span>
-                    <span>Уровень {challenge.level}</span>
+                    <span className="text-xs text-muted">{value}% выполнено</span>
+                    <span className="text-xs text-muted">Уровень {challenge.level}</span>
                 </div>
             </div>
         </motion.button>
@@ -392,7 +392,6 @@ function Dashboard({
     onOpenNotifications,
     onOpenChallenge,
     onOpenSite,
-    onLogoClick,
 }: {
     user: ApiUser;
     gameUser: GameUser;
@@ -406,7 +405,6 @@ function Dashboard({
     onOpenNotifications: () => void;
     onOpenChallenge: (challenge: ApiChallenge) => void;
     onOpenSite: () => void;
-    onLogoClick: () => void;
 }) {
     const overall = challenges.length
         ? Math.round(
@@ -429,13 +427,7 @@ function Dashboard({
                 >
                     <Menu size={20} />
                 </button>
-                <span
-                    className="brand"
-                    onClick={onLogoClick}
-                    style={{ cursor: "pointer", userSelect: "none" }}
-                >
-                    PULLUP
-                </span>
+                <span className="brand">PULLUP</span>
                 <button
                     className="icon-button"
                     aria-label="Уведомления"
@@ -890,49 +882,90 @@ function AddWorkoutModal({
     challenges,
     onClose,
     onSubmit,
+    mode,
+    onError,
 }: {
     challenges: ApiChallenge[];
     onClose: () => void;
     onSubmit: (type: ChallengeType, value: number) => void;
+    mode: DashboardMode;
+    onError: (message: string) => void;
 }) {
     const [selected, setSelected] = useState(challenges[0]?.exercise ?? "pullups");
     const [amount, setAmount] = useState(10);
     const [videoName, setVideoName] = useState("");
     const [trackerLink, setTrackerLink] = useState("");
+    const [videoFile, setVideoFile] = useState<File | null>(null);
+    const [isLoading, setIsLoading] = useState(false);
+    const [uploadProgress, setUploadProgress] = useState(0);
 
-    const save = () => {
+    const save = async () => {
         const challengeType = EXERCISE_TO_CHALLENGE[selected];
         if (!challengeType) {
-            alert("Выберите вид тренировки");
+            onError("Выберите вид тренировки");
             return;
         }
         if (challengeType === "бег" && !trackerLink.trim()) {
-            alert("Добавьте ссылку на трекер");
+            onError("Добавьте ссылку на трекер");
             return;
         }
-        if (challengeType !== "бег" && !videoName) {
-            alert("Добавьте видео тренировки");
-            return;
-        }
-
-        const answer = window.prompt(
-            challengeType === "бег"
-                ? "Сколько км засчитать для демо?"
-                : "Сколько повторений засчитать для демо?",
-            String(amount)
-        );
-        if (answer === null) return;
-        const value = Number(answer.replace(",", "."));
-        if (!Number.isFinite(value) || value <= 0) {
-            alert("Введите число больше нуля");
+        if (challengeType !== "бег" && !videoFile) {
+            onError("Добавьте видео тренировки");
             return;
         }
 
-        onSubmit(challengeType, value);
-        onClose();
-        alert(
-            "Заявка отправлена на модерацию. В демо-режиме очки начислены сразу."
-        );
+        if (mode === "demo") {
+            // В демо режиме просто симулируем отправку
+            const answer = window.prompt(
+                challengeType === "бег"
+                    ? "Сколько км засчитать?"
+                    : "Сколько повторений засчитать?",
+                String(amount)
+            );
+            if (answer === null) return;
+            const value = Number(answer.replace(",", "."));
+            if (!Number.isFinite(value) || value <= 0) {
+                onError("Введите число больше нуля");
+                return;
+            }
+
+            onSubmit(challengeType, value);
+            onClose();
+            return;
+        }
+
+        // В режиме Telegram реально отправляем видео
+        setIsLoading(true);
+        setUploadProgress(0);
+        try {
+            const { submitVideo } = await import("./api/submissions");
+            const initData = window.Telegram?.WebApp?.initData;
+
+            const response = await submitVideo(
+                selected as "pullups" | "pushups" | "plank" | "running",
+                amount,
+                videoFile,
+                challengeType === "бег" ? trackerLink : null,
+                initData
+            );
+
+            if (!response) {
+                throw new Error("Не удалось получить ответ от сервера");
+            }
+
+            onClose();
+            onError(`✅ Видео отправлено на модерацию! Номер заявки: #${response.id}`);
+        } catch (error) {
+            const message =
+                error instanceof Error
+                    ? error.message
+                    : "Неизвестная ошибка при отправке видео";
+            onError(message);
+            playError();
+        } finally {
+            setIsLoading(false);
+            setUploadProgress(0);
+        }
     };
 
     return (
@@ -1000,6 +1033,7 @@ function AddWorkoutModal({
                             onChange={(event) =>
                                 setTrackerLink(event.target.value)
                             }
+                            disabled={isLoading}
                         />
                     </label>
                 ) : (
@@ -1010,23 +1044,43 @@ function AddWorkoutModal({
                             <small>
                                 {videoName
                                     ? "Файл готов к отправке"
-                                    : "До 100 МБ · mock-загрузка"}
+                                    : "До 100 МБ"}
                             </small>
                         </span>
                         <Upload size={18} />
                         <input
                             type="file"
                             accept="video/*"
-                            onChange={(event) =>
-                                setVideoName(
-                                    event.target.files?.[0]?.name ?? ""
-                                )
-                            }
+                            onChange={(event) => {
+                                const file = event.target.files?.[0];
+                                if (file) {
+                                    setVideoFile(file);
+                                    setVideoName(file.name);
+                                }
+                            }}
+                            disabled={isLoading}
                         />
                     </label>
                 )}
-                <button className="save-workout" onClick={save}>
-                    Сохранить
+                {uploadProgress > 0 && uploadProgress < 100 && (
+                    <div className="upload-progress">
+                        <div className="progress-bar">
+                            <motion.div
+                                className="progress-fill"
+                                initial={{ width: 0 }}
+                                animate={{ width: `${uploadProgress}%` }}
+                                transition={{ duration: 0.3 }}
+                            />
+                        </div>
+                        <small>{Math.round(uploadProgress)}% загружено</small>
+                    </div>
+                )}
+                <button 
+                    className="save-workout" 
+                    onClick={save}
+                    disabled={isLoading}
+                >
+                    {isLoading ? "Отправляется..." : "Сохранить"}
                 </button>
             </motion.div>
         </motion.div>
@@ -1206,8 +1260,10 @@ export default function App() {
                             ? "telegram-error"
                             : "backend-error"
                     );
-                    setApiChallenges([]);
-                    setAchievements([]);
+                    // Instead of clearing challenges on error, fallback to demo set
+                    const demo = createDemoDashboard(failureUser ?? undefined, "telegram-error");
+                    setApiChallenges(demo.challenges);
+                    setAchievements(demo.achievements);
                     setDashboardMode(reason.mode);
                 } else {
                     setUser(null);
@@ -1215,6 +1271,10 @@ export default function App() {
                     setProfileSource("none");
                     setAuthStatus("backend-error");
                     setDashboardMode("api-error");
+                    // fallback
+                    const demo = createDemoDashboard(undefined, "api-error");
+                    setApiChallenges(demo.challenges);
+                    setAchievements(demo.achievements);
                 }
                 setError(
                     reason instanceof Error
@@ -1694,7 +1754,6 @@ export default function App() {
                         }
                         onOpenChallenge={setSelectedChallenge}
                         onOpenSite={handleOpenSite}
-                        onLogoClick={handlePullupLogoClick}
                     />
                 );
             case "challenges":
@@ -2028,6 +2087,10 @@ export default function App() {
                         challenges={challenges}
                         onClose={() => setShowWorkoutModal(false)}
                         onSubmit={addResult}
+                        mode={dashboardMode}
+                        onError={(message) =>
+                            setNotification({ type: "info", text: message })
+                        }
                     />
                 )}
                 {selectedChallenge && (

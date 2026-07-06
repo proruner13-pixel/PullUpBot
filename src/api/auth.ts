@@ -72,6 +72,6 @@ export async function authenticateTelegram(
     const response = await apiRequest<unknown>("/auth/telegram", {
         method: "POST",
         body: JSON.stringify({ initData }),
-    });
+    }, initData);
     return normalizeProfileResponse(response);
 }

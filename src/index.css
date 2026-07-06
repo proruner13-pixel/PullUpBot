@@ -358,19 +358,20 @@ a {
   --accent: var(--green);
   position: relative;
   display: grid;
-  grid-template-columns: 74px 1fr;
-  gap: 14px;
-  padding: 14px;
+  grid-template-columns: 92px 1fr;
+  gap: 18px;
+  padding: 18px 20px;
   overflow: hidden;
   background:
-    linear-gradient(110deg, color-mix(in srgb, var(--accent) 13%, transparent), transparent 42%),
-    var(--panel);
-  border: 1px solid var(--border);
-  border-radius: 18px;
-  color: #f6f8f5;
+    linear-gradient(110deg, color-mix(in srgb, var(--accent) 10%, transparent), transparent 42%),
+    linear-gradient(180deg, rgba(0,0,0,0.6), rgba(0,0,0,0.45));
+  border: 1px solid rgba(255,255,255,0.04);
+  border-radius: 20px;
+  color: #eef2f1;
   text-align: left;
   cursor: pointer;
   width: 100%;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.45) inset;
 }
 
 .challenge-card::after {
@@ -383,18 +384,20 @@ a {
 }
 
 .challenge-emblem {
-  min-height: 76px;
+  width: 92px;
+  height: 92px;
   display: grid;
   place-items: center;
-  background: color-mix(in srgb, var(--accent) 14%, #121612);
-  border: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
-  border-radius: 15px;
+  background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 18%, #0b0c0a), color-mix(in srgb, var(--accent) 10%, #0f1110));
+  border: 1px solid rgba(255,255,255,0.03);
+  border-radius: 18px;
   clip-path: polygon(50% 0, 93% 24%, 87% 77%, 50% 100%, 13% 77%, 7% 24%);
+  box-shadow: 0 8px 18px rgba(0,0,0,0.6);
 }
 
 .challenge-emblem span {
-  font-size: 29px;
-  filter: drop-shadow(0 4px 8px rgba(0,0,0,.45));
+  font-size: 34px;
+  filter: drop-shadow(0 6px 14px rgba(0,0,0,.6));
 }
 
 .challenge-body {
@@ -408,10 +411,11 @@ a {
 }
 
 .challenge-heading h3 {
-  margin: 3px 0 5px;
-  font-size: 13px;
+  margin: 2px 0 6px;
+  font-size: 15px;
+  font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: .015em;
+  letter-spacing: .02em;
 }
 
 .challenge-heading p,
@@ -422,17 +426,22 @@ a {
 }
 
 .reward {
-  align-self: flex-end;
+  align-self: flex-start;
   color: #f7d36c;
-  font-size: 11px;
+  font-size: 13px;
+  font-weight: 700;
+  background: rgba(0,0,0,0.25);
+  padding: 6px 10px;
+  border-radius: 999px;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.5);
   white-space: nowrap;
 }
 
 .progress-track {
-  height: 7px;
-  margin: 14px 0 8px;
+  height: 6px;
+  margin: 12px 0 8px;
   overflow: hidden;
-  background: rgba(255,255,255,.08);
+  background: rgba(255,255,255,.06);
   border-radius: 999px;
 }
 
@@ -1082,6 +1091,37 @@ a {
   color: #071007;
   background: linear-gradient(90deg, #63d44f, #3b9f35);
   border: 0;
+}
+
+.save-workout:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.upload-progress {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.upload-progress .progress-bar {
+  height: 4px;
+  background: rgba(113, 228, 91, 0.1);
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.upload-progress .progress-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #63d44f, #3b9f35);
+  display: block;
+}
+
+.upload-progress small {
+  font-size: 12px;
+  color: #8c958f;
+  text-align: center;
 }
 
 .app-state {

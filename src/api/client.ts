@@ -131,13 +131,39 @@ export async function apiRequest<T>(
     if (configurationError) {
         throw new Error(configurationError);
     }
-    const response = await fetch(`${API_URL}${path}`, {
+
+    const url = `${API_URL}${path}`;
+    const headers = {
+        ...authHeaders(initData),
+        ...init?.headers,
+    } as Record<string, string>;
+
+    if (import.meta.env.DEV) {
+        console.log("[DEV] apiRequest ->", init?.method ?? "GET", url);
+        console.log("[DEV] apiRequest headers include Authorization:", Boolean(headers.Authorization));
+    }
+
+    const response = await fetch(url, {
         ...init,
-        headers: {
-            ...authHeaders(initData),
-            ...init?.headers,
-        },
+        headers,
     });
+
+    if (import.meta.env.DEV) {
+        console.log("[DEV] apiRequest response status:", response.status, response.statusText);
+        try {
+            const text = await response.clone().text();
+            let parsed;
+            try {
+                parsed = JSON.parse(text);
+            } catch {
+                parsed = text;
+            }
+            console.log("[DEV] apiRequest response body:", parsed);
+        } catch (err) {
+            console.warn("[DEV] apiRequest failed to read response body", err);
+        }
+    }
+
     if (!response.ok) {
         let detail = `PULLUP API error: ${response.status}`;
         try {
@@ -193,9 +219,9 @@ export async function getAchievements(): Promise<AchievementDto[]> {
     }));
 }
 
-export async function getChallenges(): Promise<ChallengeDto[]> {
+export async function getChallenges(initData?: string): Promise<ChallengeDto[]> {
     if (isApiEnabled()) {
-        return apiRequest<ChallengeDto[]>("/api/challenges");
+        return apiRequest<ChallengeDto[]>("/api/challenges", undefined, initData);
     }
     const user = loadUser();
     return (

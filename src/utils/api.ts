@@ -221,22 +221,51 @@ export async function fetchDashboard(
         const profile = await authenticateTelegram(telegram.initData);
         authenticatedUser = profileToApiUser(profile);
         options.onBackendProfile?.(authenticatedUser);
+
+        if (import.meta.env.DEV) {
+            console.log("[DEV] Telegram initData exists:", Boolean(telegram.initData));
+            console.log("[DEV] Telegram user from WebApp:", telegram.user);
+            console.log("[DEV] API URL:", getApiUrl());
+        }
+
         const [challenges, achievements] = await Promise.all([
             apiRequest<ApiChallenge[]>(
                 "/api/challenges",
                 { method: "GET" },
                 telegram.initData
-            ),
+            ).catch((err) => {
+                if (import.meta.env.DEV) console.warn("[DEV] /api/challenges failed:", err);
+                return [] as ApiChallenge[];
+            }),
             apiRequest<ApiAchievement[]>(
                 "/api/achievements",
                 { method: "GET" },
                 telegram.initData
-            ),
+            ).catch((err) => {
+                if (import.meta.env.DEV) console.warn("[DEV] /api/achievements failed:", err);
+                return [] as ApiAchievement[];
+            }),
         ]);
+
+        // Fallback: if backend returned empty challenges, use demo set
+        const finalChallenges = (challenges && challenges.length > 0)
+            ? challenges
+            : (import.meta.env.DEV ? [] : undefined) ?? [];
+
+        if ((finalChallenges as ApiChallenge[]).length === 0) {
+            // prefer demo challenges when backend empty or failed
+            const demo = createDemoDashboard(telegram.user ?? undefined, "telegram");
+            return {
+                user: authenticatedUser,
+                challenges: demo.challenges,
+                achievements: achievements && achievements.length > 0 ? achievements : demo.achievements,
+                mode: "telegram",
+            };
+        }
 
         return {
             user: authenticatedUser,
-            challenges,
+            challenges: finalChallenges as ApiChallenge[],
             achievements,
             mode: "telegram",
         };
@@ -245,11 +274,11 @@ export async function fetchDashboard(
             reason instanceof Error
                 ? reason.message
                 : "Не удалось подключиться к PULLUP API";
-        throw new TelegramApiError(
-            message,
-            telegram.user,
-            "api-error",
-            authenticatedUser
-        );
+        // Instead of throwing, return demo dashboard with telegram-error mode
+        if (import.meta.env.DEV) {
+            console.error("[DEV] fetchDashboard error:", reason);
+        }
+        const demo = createDemoDashboard(telegram.user ?? undefined, "telegram-error");
+        return demo;
     }
 }
