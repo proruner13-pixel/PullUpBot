@@ -915,7 +915,8 @@ function AddWorkoutModal({
             return;
         }
 
-        if (mode === "demo") {
+        // Используем демо режим при ошибках API или в обычном браузере
+        if (mode === "demo" || mode === "telegram-error" || mode === "api-error") {
             // В демо режиме просто симулируем отправку
             const answer = window.prompt(
                 challengeType === "бег"
