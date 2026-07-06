@@ -1,4 +1,4 @@
-import { API_URL } from "./client";
+import { API_URL, getApiConfigurationError } from "./client";
 
 export interface SubmissionResponse {
     id: number;
@@ -24,6 +24,16 @@ export async function submitVideo(
     initData?: string,
     onProgress?: (progress: number) => void
 ): Promise<SubmissionResponse> {
+    // Проверка конфигурации API
+    const configError = getApiConfigurationError();
+    if (configError) {
+        throw new Error(`API не настроен: ${configError}`);
+    }
+
+    if (!API_URL) {
+        throw new Error("API_URL не определён. Невозможно отправить видео.");
+    }
+
     const formData = new FormData();
     formData.append("type", type);
     formData.append("value", String(value));
@@ -33,6 +43,16 @@ export async function submitVideo(
         formData.append("video", videoFile);
     } else if (trackerLink) {
         formData.append("video_url", trackerLink);
+    }
+
+    const url = `${API_URL}/submissions`;
+
+    if (import.meta.env.DEV) {
+        console.log("[DEV] submitVideo POST", url);
+        console.log("[DEV] submitVideo has initData:", Boolean(initData || window.Telegram?.WebApp?.initData));
+        console.log("[DEV] submitVideo type:", type, "value:", value);
+        console.log("[DEV] submitVideo videoFile:", videoFile?.name, videoFile?.size, "bytes");
+        console.log("[DEV] submitVideo trackerLink:", trackerLink ? trackerLink.substring(0, 50) + "..." : "none");
     }
 
     return new Promise((resolve, reject) => {
@@ -50,6 +70,11 @@ export async function submitVideo(
 
         xhr.addEventListener("load", () => {
             try {
+                if (import.meta.env.DEV) {
+                    console.log("[DEV] submitVideo response status:", xhr.status);
+                    console.log("[DEV] submitVideo response body:", xhr.responseText.substring(0, 200));
+                }
+
                 if (xhr.status >= 200 && xhr.status < 300) {
                     const response = JSON.parse(xhr.responseText) as SubmissionResponse;
                     resolve(response);
@@ -65,6 +90,9 @@ export async function submitVideo(
                     } catch {
                         // Используем стандартное сообщение об ошибке
                     }
+                    if (import.meta.env.DEV) {
+                        console.error("[DEV] submitVideo error message:", errorMessage);
+                    }
                     reject(new Error(errorMessage));
                 }
             } catch (error) {
@@ -78,11 +106,19 @@ export async function submitVideo(
             }
         });
 
-        xhr.addEventListener("error", () => {
-            reject(new Error("Ошибка сети при отправке видео"));
+        xhr.addEventListener("error", (event) => {
+            if (import.meta.env.DEV) {
+                console.error("[DEV] submitVideo network error event:", event);
+                console.error("[DEV] submitVideo request URL:", url);
+                console.error("[DEV] submitVideo CORS may be blocked or backend unreachable");
+            }
+            reject(new Error("Ошибка сети при отправке видео. Проверьте подключение и попробуйте снова."));
         });
 
         xhr.addEventListener("abort", () => {
+            if (import.meta.env.DEV) {
+                console.warn("[DEV] submitVideo request aborted");
+            }
             reject(new Error("Отправка видео отменена"));
         });
 
@@ -94,11 +130,24 @@ export async function submitVideo(
             headers["Authorization"] = `tma ${window.Telegram.WebApp.initData}`;
         }
 
-        xhr.open("POST", `${API_URL}/submissions`);
-        Object.entries(headers).forEach(([key, value]) => {
-            xhr.setRequestHeader(key, value);
-        });
-        xhr.send(formData);
+        try {
+            xhr.open("POST", url);
+            Object.entries(headers).forEach(([key, value]) => {
+                xhr.setRequestHeader(key, value);
+            });
+            xhr.send(formData);
+        } catch (error) {
+            if (import.meta.env.DEV) {
+                console.error("[DEV] submitVideo xhr.open/send error:", error);
+            }
+            reject(
+                new Error(
+                    error instanceof Error
+                        ? `Ошибка при инициализации запроса: ${error.message}`
+                        : "Не удалось инициализировать отправку видео"
+                )
+            );
+        }
     });
 }
 

@@ -942,12 +942,23 @@ function AddWorkoutModal({
             const { submitVideo } = await import("./api/submissions");
             const initData = window.Telegram?.WebApp?.initData;
 
+            if (import.meta.env.DEV) {
+                console.log("[DEV] AddWorkoutModal.save: starting video submission");
+                console.log("[DEV] AddWorkoutModal.save: initData exists:", Boolean(initData));
+            }
+
             const response = await submitVideo(
                 selected as "pullups" | "pushups" | "plank" | "running",
                 amount,
                 videoFile,
                 challengeType === "бег" ? trackerLink : null,
-                initData
+                initData,
+                (progress) => {
+                    setUploadProgress(progress);
+                    if (import.meta.env.DEV && progress % 25 === 0) {
+                        console.log("[DEV] Upload progress:", progress + "%");
+                    }
+                }
             );
 
             if (!response) {
@@ -961,6 +972,9 @@ function AddWorkoutModal({
                 error instanceof Error
                     ? error.message
                     : "Неизвестная ошибка при отправке видео";
+            if (import.meta.env.DEV) {
+                console.error("[DEV] AddWorkoutModal.save error:", error);
+            }
             onError(message);
             playError();
         } finally {
