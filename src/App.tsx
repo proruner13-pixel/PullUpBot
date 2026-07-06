@@ -915,17 +915,15 @@ function AddWorkoutModal({
             return;
         }
 
-        // Используем демо режим при ошибках API или в обычном браузере
-        if (mode === "demo" || mode === "telegram-error" || mode === "api-error") {
-            // В демо режиме просто симулируем отправку
-            const answer = window.prompt(
-                challengeType === "бег"
-                    ? "Сколько км засчитать?"
-                    : "Сколько повторений засчитать?",
-                String(amount)
-            );
-            if (answer === null) return;
-            const value = Number(answer.replace(",", "."));
+        const isTelegramContext = Boolean(window.Telegram?.WebApp?.initData);
+        const shouldUseDemoSubmission =
+            mode === "demo" ||
+            mode === "telegram-error" ||
+            mode === "api-error" ||
+            !isTelegramContext;
+
+        if (shouldUseDemoSubmission) {
+            const value = Number(amount);
             if (!Number.isFinite(value) || value <= 0) {
                 onError("Введите число больше нуля");
                 return;
