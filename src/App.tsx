@@ -82,6 +82,7 @@ import {
     type ChallengeType,
     type User as GameUser,
 } from "./game/progress";
+import { createDemoDashboard } from "./mocks/data";
 import { resetDemoProgress as resetStoredDemoProgress } from "./api/client";
 import {
     EFFECT_STORAGE_KEYS,
