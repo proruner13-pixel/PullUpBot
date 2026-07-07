@@ -71,6 +71,9 @@ async def preflight(connection: asyncpg.Connection) -> None:
             "id",
             "user_id",
             "video_file_id",
+            "file_path",
+            "file_url",
+            "source",
             "caption",
             "count",
             "status",
@@ -148,7 +151,7 @@ async def verify(connection: asyncpg.Connection) -> None:
             "SELECT version FROM public.schema_migrations"
         )
     }
-    missing_versions = {"002", "003"} - applied
+    missing_versions = {"002", "003", "004"} - applied
     if missing_versions:
         raise RuntimeError(
             "Required migrations are not recorded: "
@@ -179,7 +182,7 @@ async def verify(connection: asyncpg.Connection) -> None:
     if not idempotency_index:
         raise RuntimeError("Submission token idempotency index is missing")
 
-    print("Migrations 002 and 003 are applied")
+    print("Migrations 002, 003, and 004 are applied")
     print("Submission type constraint is valid")
     print("Submission token idempotency index exists")
 

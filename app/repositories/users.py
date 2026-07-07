@@ -26,6 +26,7 @@ async def upsert_user(
             avatar_url = EXCLUDED.avatar_url,
             updated_at = NOW()
         RETURNING
+            id,
             telegram_id,
             display_name,
             username,

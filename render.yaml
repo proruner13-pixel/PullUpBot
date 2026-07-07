@@ -24,3 +24,31 @@ services:
         sync: false
       - key: TELEGRAM_AUTH_MAX_AGE
         value: "86400"
+      - key: LOG_LEVEL
+        value: INFO
+  - type: worker
+    name: pullup-bot
+    runtime: python
+    plan: starter
+    buildCommand: pip install -r bot/requirements.txt
+    startCommand: python -m bot.worker
+    autoDeployTrigger: commit
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.13.5
+      - key: APP_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false
+      - key: BOT_TOKEN
+        sync: false
+      - key: WEBAPP_URL
+        value: https://pullupbot.vercel.app
+      - key: CORS_ORIGINS
+        value: https://pullupbot.vercel.app
+      - key: ADMIN_ID
+        sync: false
+      - key: TELEGRAM_AUTH_MAX_AGE
+        value: "86400"
+      - key: LOG_LEVEL
+        value: INFO

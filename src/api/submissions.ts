@@ -37,6 +37,7 @@ export async function submitVideo(
     const formData = new FormData();
     formData.append("type", type);
     formData.append("value", String(value));
+    formData.append("caption", `${type}: ${value}`);
 
     // Добавляем видео или ссылку трекера
     if (videoFile) {
@@ -45,14 +46,28 @@ export async function submitVideo(
         formData.append("video_url", trackerLink);
     }
 
+    const resolvedInitData = initData ?? window.Telegram?.WebApp?.initData;
     const url = `${API_URL}/submissions`;
+
+    console.info("VIDEO_UPLOAD_STARTED", {
+        url,
+        type,
+        value,
+        hasVideo: Boolean(videoFile),
+        hasTrackerLink: Boolean(trackerLink),
+        hasInitData: Boolean(resolvedInitData),
+    });
 
     if (import.meta.env.DEV) {
         console.log("[DEV] submitVideo POST", url);
-        console.log("[DEV] submitVideo has initData:", Boolean(initData || window.Telegram?.WebApp?.initData));
+        console.log("[DEV] submitVideo has initData:", Boolean(resolvedInitData));
         console.log("[DEV] submitVideo type:", type, "value:", value);
         console.log("[DEV] submitVideo videoFile:", videoFile?.name, videoFile?.size, "bytes");
         console.log("[DEV] submitVideo trackerLink:", trackerLink ? trackerLink.substring(0, 50) + "..." : "none");
+    }
+
+    if (!resolvedInitData) {
+        throw new Error("Для отправки видео нужен Telegram initData. Откройте приложение внутри Telegram.");
     }
 
     return new Promise((resolve, reject) => {
@@ -77,6 +92,10 @@ export async function submitVideo(
 
                 if (xhr.status >= 200 && xhr.status < 300) {
                     const response = JSON.parse(xhr.responseText) as SubmissionResponse;
+                    console.info("VIDEO_UPLOAD_SUCCESS", {
+                        submissionId: response.id,
+                        status: response.status,
+                    });
                     resolve(response);
                 } else {
                     let errorMessage = `Ошибка сервера: ${xhr.status}`;
@@ -93,9 +112,14 @@ export async function submitVideo(
                     if (import.meta.env.DEV) {
                         console.error("[DEV] submitVideo error message:", errorMessage);
                     }
+                    console.error("VIDEO_UPLOAD_FAILED", {
+                        status: xhr.status,
+                        message: errorMessage,
+                    });
                     reject(new Error(errorMessage));
                 }
             } catch (error) {
+                console.error("VIDEO_UPLOAD_FAILED", error);
                 reject(
                     new Error(
                         error instanceof Error
@@ -112,6 +136,10 @@ export async function submitVideo(
                 console.error("[DEV] submitVideo request URL:", url);
                 console.error("[DEV] submitVideo CORS may be blocked or backend unreachable");
             }
+            console.error("VIDEO_UPLOAD_FAILED", {
+                message: "network error",
+                url,
+            });
             reject(new Error("Ошибка сети при отправке видео. Проверьте подключение и попробуйте снова."));
         });
 
@@ -119,15 +147,17 @@ export async function submitVideo(
             if (import.meta.env.DEV) {
                 console.warn("[DEV] submitVideo request aborted");
             }
+            console.error("VIDEO_UPLOAD_FAILED", {
+                message: "aborted",
+                url,
+            });
             reject(new Error("Отправка видео отменена"));
         });
 
         // Добавляем токен авторизации
         const headers: Record<string, string> = {};
-        if (initData) {
-            headers["Authorization"] = `tma ${initData}`;
-        } else if (typeof window !== "undefined" && window.Telegram?.WebApp?.initData) {
-            headers["Authorization"] = `tma ${window.Telegram.WebApp.initData}`;
+        if (resolvedInitData) {
+            headers["Authorization"] = `tma ${resolvedInitData}`;
         }
 
         try {
@@ -140,6 +170,7 @@ export async function submitVideo(
             if (import.meta.env.DEV) {
                 console.error("[DEV] submitVideo xhr.open/send error:", error);
             }
+            console.error("VIDEO_UPLOAD_FAILED", error);
             reject(
                 new Error(
                     error instanceof Error

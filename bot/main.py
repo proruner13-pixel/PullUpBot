@@ -5,6 +5,7 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import random
 
 import asyncio
+import logging
 import secrets
 from typing import Optional, Dict
 from aiogram import Bot, Dispatcher, F
@@ -13,12 +14,18 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import (
     Message, CallbackQuery,
     InlineKeyboardMarkup, InlineKeyboardButton, ForceReply,
-    BotCommand, BotCommandScopeDefault, BotCommandScopeChat, User
+    BotCommand, BotCommandScopeDefault, BotCommandScopeChat, User, FSInputFile
 )
 import asyncpg
 from aiogram.types import WebAppInfo
 from app.config import ROOT_ENV_FILE, Settings, root_env_keys
 
+
+logging.basicConfig(
+    level=os.getenv("LOG_LEVEL", "INFO").upper(),
+    format="%(asctime)s %(levelname)s %(name)s %(message)s",
+)
+logger = logging.getLogger("pullup.bot")
 
 
 # ================== Конфиг ==================
@@ -72,7 +79,10 @@ CREATE TABLE IF NOT EXISTS users (
 CREATE TABLE IF NOT EXISTS pullups (
     id SERIAL PRIMARY KEY,
     user_id INT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    video_file_id TEXT NOT NULL,
+    video_file_id TEXT,
+    file_path TEXT,
+    file_url TEXT,
+    source TEXT NOT NULL DEFAULT 'telegram',
     caption TEXT,
     count INT,
     status TEXT NOT NULL DEFAULT 'pending', -- pending | approved | rejected
@@ -92,6 +102,9 @@ ALTERS = [
     ("users", "ref_code", "TEXT UNIQUE"),
     ("users", "referred_by", "INT REFERENCES users(id) ON DELETE SET NULL"),
     ("users", "referrals_count", "INT NOT NULL DEFAULT 0"),
+    ("pullups", "file_path", "TEXT"),
+    ("pullups", "file_url", "TEXT"),
+    ("pullups", "source", "TEXT NOT NULL DEFAULT 'telegram'"),
 ]
 
 async def init_db_pool() -> asyncpg.Pool:
@@ -104,6 +117,7 @@ async def init_db_pool() -> asyncpg.Pool:
 async def ensure_schema():
     async with db_pool.acquire() as conn:
         await conn.execute(CREATE_TABLES_SQL)
+        await conn.execute("ALTER TABLE pullups ALTER COLUMN video_file_id DROP NOT NULL")
         for table, column, ddl in ALTERS:
             try:
                 await conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} {ddl}")
@@ -195,16 +209,21 @@ def gen_ref_code() -> str:
     return secrets.token_urlsafe(6).replace("_", "A").replace("-", "B")
 
 # ================== DB-утилиты ==================
-async def ensure_user(telegram_id: int, username: Optional[str], display_name: Optional[str] = None):
+async def ensure_user(
+    telegram_id: int,
+    username: Optional[str],
+    display_name: Optional[str] = None,
+) -> int:
     """Создаём пользователя, если нет. Гарантируем ref_code."""
     async with db_pool.acquire() as conn:
         async with conn.transaction():
             row = await conn.fetchrow("SELECT id, ref_code FROM users WHERE telegram_id=$1", telegram_id)
             if row is None:
                 code = gen_ref_code()
-                await conn.execute("""
+                user_id = await conn.fetchval("""
                     INSERT INTO users (telegram_id, username, display_name, ref_code)
                     VALUES ($1, $2, $3, $4)
+                    RETURNING id
                 """, telegram_id, username, display_name, code)
             else:
                 # подчищаем username/имя при необходимости
@@ -212,6 +231,15 @@ async def ensure_user(telegram_id: int, username: Optional[str], display_name: O
                     UPDATE users SET username=$2, display_name=COALESCE(display_name, $3)
                     WHERE telegram_id=$1
                 """, telegram_id, username, display_name)
+                user_id = row["id"]
+
+            logger.info(
+                "USER_FOUND_OR_CREATED telegram_id=%s user_id=%s username=%s",
+                telegram_id,
+                user_id,
+                username or "",
+            )
+            return user_id
 
 async def set_display_name(telegram_id: int, name: str):
     async with db_pool.acquire() as conn:
@@ -256,12 +284,23 @@ async def get_submission_summary(telegram_id: int):
         )
 
 
-async def insert_pending_video(user_id: int, file_id: str, caption: Optional[str]):
+async def insert_pending_video(user_id: int, file_id: str, caption: Optional[str]) -> int:
     async with db_pool.acquire() as conn:
-        await conn.execute("""
-            INSERT INTO pullups (user_id, video_file_id, caption, status)
-            VALUES ($1, $2, $3, 'pending')
+        pullup_id = await conn.fetchval("""
+            INSERT INTO pullups (
+                user_id,
+                video_file_id,
+                source,
+                caption,
+                count,
+                status,
+                created_at
+            )
+            VALUES ($1, $2, 'telegram', $3, NULL, 'pending', NOW())
+            RETURNING id
         """, user_id, file_id, caption)
+        logger.info("PULLUP_INSERTED pullup_id=%s user_id=%s", pullup_id, user_id)
+        return pullup_id
 
 async def list_pending_ids(limit: int = 50) -> list[int]:
     async with db_pool.acquire() as conn:
@@ -654,19 +693,36 @@ async def handle_video(message: Message):
     if not message.video:
         await send_submit(message)
         return
-    
-    await ensure_user(message.from_user.id, message.from_user.username, message.from_user.full_name)
-    uid = await get_user_id(message.from_user.id)
-    if not uid:
-        await message.answer("Не удалось идентифицировать пользователя. Попробуй снова.")
-        return
-    
-    await insert_pending_video(uid, message.video.file_id, message.caption)
-    await message.answer(
-        "<b>Видео принято</b>\n\n"
-        "Оно отправлено на модерацию. Статус можно проверить командой /submit.",
-        reply_markup=app_keyboard(),
-    )
+
+    try:
+        logger.info(
+            "VIDEO_RECEIVED telegram_id=%s video_file_id=%s caption=%r",
+            message.from_user.id,
+            message.video.file_id,
+            message.caption,
+        )
+        uid = await ensure_user(
+            message.from_user.id,
+            message.from_user.username,
+            message.from_user.full_name,
+        )
+
+        pullup_id = await insert_pending_video(uid, message.video.file_id, message.caption)
+        await message.answer(
+            "<b>Видео принято</b>\n\n"
+            f"Заявка #{pullup_id} отправлена на модерацию. "
+            "Статус можно проверить командой /submit.",
+            reply_markup=app_keyboard(),
+        )
+    except Exception:
+        logger.exception(
+            "VIDEO_PROCESSING_FAILED telegram_id=%s video_file_id=%s",
+            message.from_user.id,
+            message.video.file_id,
+        )
+        await message.answer(
+            "Не удалось сохранить видео. Попробуй отправить его ещё раз чуть позже."
+        )
 
 # ================== Админ (модерация) ==================
 def is_admin(message: Message) -> bool:
@@ -676,29 +732,79 @@ def is_admin(message: Message) -> bool:
 async def cmd_pending(message: Message):
     if not is_admin(message):
         return await message.answer("Эта команда доступна только администратору.")
-    
-    ids = await list_pending_ids(50)
-    if not ids:
-        return await message.answer("Очередь пуста. Нет видео в статусе <i>pending</i>.")
-    
-    first = ids[0]
-    await open_item(message.chat.id, first, ids)
+
+    try:
+        ids = await list_pending_ids(1)
+        logger.info(
+            "PENDING_REQUESTED telegram_id=%s pending_count=%s",
+            message.from_user.id,
+            len(ids),
+        )
+        if not ids:
+            logger.info("PENDING_EMPTY telegram_id=%s", message.from_user.id)
+            return await message.answer("Очередь пуста. Нет видео в статусе <i>pending</i>.")
+
+        first = ids[0]
+        await open_item(message.chat.id, first, ids)
+    except Exception:
+        logger.exception("PENDING_FAILED telegram_id=%s", message.from_user.id)
+        await message.answer("Не удалось загрузить очередь. Попробуй ещё раз позже.")
 
 async def open_item(chat_id: int, pullup_id: int, queue_ids: list[int]):
     row = await get_pullup(pullup_id)
     if not row:
         await bot.send_message(chat_id, f"Запись {pullup_id} не найдена.")
         return
-    
+
+    logger.info(
+        "PENDING_FOUND pullup_id=%s source=%s user_id=%s",
+        pullup_id,
+        row["source"] or "telegram",
+        row["user_id"],
+    )
     uname = row["display_name"] or (("@" + row["username"]) if row["username"] else f"id{row['telegram_id']}")
     caption = (
         f"<b>На модерации #{pullup_id}</b>\n"
         f"От: {uname}\n"
+        f"User ID: {row['user_id']}\n"
         f"Статус: {row['status']}\n\n"
+        f"Источник: {row['source'] or 'telegram'}\n"
+        f"Создано: {row['created_at']}\n\n"
         f"{row['caption'] or ''}"
     ).strip()
-    
-    await bot.send_video(chat_id, row["video_file_id"], caption=caption, reply_markup=moderation_kb(pullup_id))
+
+    source = row["source"] or "telegram"
+    if source == "webapp":
+        logger.info("PENDING_SOURCE_WEBAPP pullup_id=%s", pullup_id)
+        if row["file_url"]:
+            await bot.send_video(
+                chat_id,
+                row["file_url"],
+                caption=caption,
+                reply_markup=moderation_kb(pullup_id),
+            )
+        elif row["file_path"] and os.path.exists(row["file_path"]):
+            await bot.send_video(
+                chat_id,
+                FSInputFile(row["file_path"]),
+                caption=caption,
+                reply_markup=moderation_kb(pullup_id),
+            )
+        else:
+            await bot.send_message(
+                chat_id,
+                f"{caption}\n\nВидео недоступно: файл или ссылка не найдены.",
+                reply_markup=moderation_kb(pullup_id),
+            )
+    else:
+        logger.info("PENDING_SOURCE_TELEGRAM pullup_id=%s", pullup_id)
+        await bot.send_video(
+            chat_id,
+            row["video_file_id"],
+            caption=caption,
+            reply_markup=moderation_kb(pullup_id),
+        )
+    logger.info("PENDING_SENT_TO_MODERATOR pullup_id=%s chat_id=%s", pullup_id, chat_id)
     
     # Кнопки навигации (по желанию)
     try:
@@ -836,6 +942,7 @@ async def main():
     global db_pool
     db_pool = await init_db_pool()
     await ensure_schema()
+    await bot.delete_webhook(drop_pending_updates=False)
     await bot.set_my_commands(
         USER_COMMANDS,
         scope=BotCommandScopeDefault(),
@@ -854,7 +961,7 @@ async def main():
             )
         except Exception as error:
             print(f"[BOT] Не удалось настроить меню модератора: {error}")
-    print("[DB] Ок. Стартуем бота…")
+    logger.info("BOT_STARTED mode=polling admin_id=%s", ADMIN_ID)
     await dp.start_polling(bot)
 
 if __name__ == "__main__":

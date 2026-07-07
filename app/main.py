@@ -3,8 +3,9 @@ from typing import AsyncIterator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 
-from app.config import Settings
+from app.config import PROJECT_ROOT, Settings
 from app.database import Database
 from app.routers import (
     achievements,
@@ -36,6 +37,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     application.state.settings = app_settings
     application.state.database = database
+    uploads_dir = PROJECT_ROOT / "uploads"
+    uploads_dir.mkdir(parents=True, exist_ok=True)
 
     application.add_middleware(
         CORSMiddleware,
@@ -58,6 +61,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(auth.router)
     application.include_router(profile.router)
     application.include_router(submissions.router)
+    application.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
     return application
 
 

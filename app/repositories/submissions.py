@@ -44,6 +44,47 @@ async def create_submission(
     )
 
 
+async def create_webapp_pullup(
+    connection: asyncpg.Connection,
+    *,
+    user_id: int,
+    file_path: str | None,
+    file_url: str | None,
+    caption: str | None,
+) -> asyncpg.Record:
+    return await connection.fetchrow(
+        """
+        INSERT INTO pullups (
+            user_id,
+            video_file_id,
+            file_path,
+            file_url,
+            source,
+            caption,
+            count,
+            status,
+            created_at
+        )
+        VALUES ($1, NULL, $2, $3, 'webapp', $4, NULL, 'pending', NOW())
+        RETURNING
+            id,
+            user_id,
+            video_file_id,
+            file_path,
+            file_url,
+            source,
+            caption,
+            count,
+            status,
+            created_at
+        """,
+        user_id,
+        file_path,
+        file_url,
+        caption,
+    )
+
+
 async def list_submissions(
     connection: asyncpg.Connection,
     *,

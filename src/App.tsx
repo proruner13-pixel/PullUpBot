@@ -920,7 +920,8 @@ function AddWorkoutModal({
             mode === "demo" ||
             mode === "telegram-error" ||
             mode === "api-error" ||
-            !isTelegramContext;
+            !isTelegramContext ||
+            !window.Telegram?.WebApp?.initData;
 
         if (shouldUseDemoSubmission) {
             const value = Number(amount);
