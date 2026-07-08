@@ -18,6 +18,7 @@ from app.routers import (
     submissions,
     users,
 )
+from app.schema_validation import SchemaMismatchError, validate_required_schema
 
 logger = logging.getLogger("pullup.api")
 
@@ -34,7 +35,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         logger.info("UPLOAD_DIR_CONFIG upload_dir=%s", uploads_dir)
         await database.connect()
         try:
+            async with database.connection() as connection:
+                await validate_required_schema(connection)
             yield
+        except SchemaMismatchError:
+            logger.exception("DATABASE_SCHEMA_MISMATCH")
+            raise
         finally:
             await database.close()
 
@@ -49,12 +55,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     application.add_middleware(
         CORSMiddleware,
-        allow_origins=[
-            "https://pullupbot.vercel.app",
-            "https://pullup-backend-dtxl.onrender.com",
-            "http://localhost:5173",
-            "http://localhost:3000",
-        ],
+        allow_origins=list(app_settings.cors_origins),
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],

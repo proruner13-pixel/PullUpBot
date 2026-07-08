@@ -21,7 +21,6 @@ export interface ProfileDto {
     last_name: string | null;
     avatar_url: string | null;
     tokens: number;
-    balance: number;
     xp: number;
     total_xp: number;
     level: number;
@@ -67,6 +66,41 @@ export interface LeaderboardEntryDto {
     score: number;
 }
 
+export type ApiFailureKind =
+    | "config"
+    | "network"
+    | "auth"
+    | "http"
+    | "parse";
+
+export class PullupApiError extends Error {
+    readonly kind: ApiFailureKind;
+    readonly requestUrl: string;
+    readonly method: string;
+    readonly status?: number;
+
+    constructor({
+        kind,
+        message,
+        requestUrl,
+        method,
+        status,
+    }: {
+        kind: ApiFailureKind;
+        message: string;
+        requestUrl: string;
+        method: string;
+        status?: number;
+    }) {
+        super(message);
+        this.name = "PullupApiError";
+        this.kind = kind;
+        this.requestUrl = requestUrl;
+        this.method = method;
+        this.status = status;
+    }
+}
+
 const CONFIGURED_API_URL = (import.meta.env.VITE_API_URL ?? "")
     .trim()
     .replace(/\/$/, "");
@@ -109,11 +143,13 @@ export function getApiUrlSource(): "env" | "fallback" | "localhost" {
 
 export function getApiConfigurationError(): string | null {
     if (import.meta.env.PROD && configuredApiIsLocal) {
-        return "Ошибка: API_URL указывает на localhost. Для Telegram нужен публичный HTTPS backend.";
+        return `Ошибка: VITE_API_URL указывает на localhost (${CONFIGURED_API_URL}). Для Telegram нужен публичный HTTPS backend.`;
     }
-    if (!API_URL) return "API_URL не настроен";
+    if (!API_URL) {
+        return "VITE_API_URL не настроен. Укажите https://pullup-backend-dtxl.onrender.com в Vercel Environment Variables.";
+    }
     if (import.meta.env.PROD && !API_URL.startsWith("https://")) {
-        return "Ошибка: для Telegram нужен публичный HTTPS backend.";
+        return `Ошибка: VITE_API_URL должен быть публичным HTTPS backend. Сейчас используется: ${API_URL}`;
     }
     return null;
 }
@@ -134,9 +170,15 @@ export async function apiRequest<T>(
     init?: RequestInit,
     initData?: string
 ): Promise<T> {
+    const method = init?.method ?? "GET";
     const configurationError = getApiConfigurationError();
     if (configurationError) {
-        throw new Error(configurationError);
+        throw new PullupApiError({
+            kind: "config",
+            message: configurationError,
+            requestUrl: API_URL ? `${API_URL}${path}` : path,
+            method,
+        });
     }
 
     const url = `${API_URL}${path}`;
@@ -146,18 +188,39 @@ export async function apiRequest<T>(
     } as Record<string, string>;
 
     if (import.meta.env.DEV) {
-        console.log("[DEV] apiRequest ->", init?.method ?? "GET", url);
+        console.log("[DEV] apiRequest ->", method, url);
         console.log("[DEV] apiRequest headers include Authorization:", Boolean(headers.Authorization));
     }
 
-    const response = await fetch(url, {
-        ...init,
-        headers,
-    });
+    let response: Response;
+    try {
+        response = await fetch(url, {
+            ...init,
+            headers,
+        });
+    } catch (error) {
+        const message =
+            error instanceof Error ? error.message : "Network request failed";
+        console.error("[PULLUP API] fetch failed", {
+            url,
+            method,
+            message,
+            apiBaseUrl: API_URL,
+            apiUrlSource: getApiUrlSource(),
+        });
+        throw new PullupApiError({
+            kind: "network",
+            message:
+                `CORS/network error: backend недоступен или preflight заблокирован. ` +
+                `Request: ${method} ${url}. Detail: ${message}`,
+            requestUrl: url,
+            method,
+        });
+    }
 
     console.info("[PULLUP API] response", {
-        path,
-        method: init?.method ?? "GET",
+        url,
+        method,
         status: response.status,
         ok: response.ok,
     });
@@ -186,9 +249,47 @@ export async function apiRequest<T>(
         } catch {
             // Keep the HTTP status when the response is not JSON.
         }
-        throw new Error(detail);
+        const kind: ApiFailureKind =
+            response.status === 401 || response.status === 403
+                ? "auth"
+                : "http";
+        const message =
+            kind === "auth"
+                ? `Backend вернул ${response.status}: Telegram initData не принят или доступ запрещён. Request: ${method} ${url}. Detail: ${detail}`
+                : `Backend вернул ${response.status}. Request: ${method} ${url}. Detail: ${detail}`;
+        console.error("[PULLUP API] error response", {
+            url,
+            method,
+            status: response.status,
+            message,
+        });
+        throw new PullupApiError({
+            kind,
+            message,
+            requestUrl: url,
+            method,
+            status: response.status,
+        });
     }
-    return response.json() as Promise<T>;
+    try {
+        return (await response.json()) as T;
+    } catch (error) {
+        const message =
+            error instanceof Error ? error.message : "Invalid JSON response";
+        console.error("[PULLUP API] response parse failed", {
+            url,
+            method,
+            status: response.status,
+            message,
+        });
+        throw new PullupApiError({
+            kind: "parse",
+            message: `Backend ответил некорректным JSON. Request: ${method} ${url}. Detail: ${message}`,
+            requestUrl: url,
+            method,
+            status: response.status,
+        });
+    }
 }
 
 function localProfile(): ProfileDto {
@@ -200,7 +301,6 @@ function localProfile(): ProfileDto {
         last_name: null,
         avatar_url: user.avatarUrl ?? null,
         tokens: user.tokens,
-        balance: user.tokens,
         xp: user.xp,
         total_xp: user.xp,
         level: user.totalLevel,

@@ -6,6 +6,7 @@ from pathlib import Path
 import asyncpg
 
 from app.config import Settings
+from app.schema_validation import REQUIRED_COLUMNS, validate_required_schema
 
 
 MIGRATIONS_DIR = Path(__file__).resolve().parent.parent / "migrations"
@@ -54,84 +55,7 @@ async def status(connection: asyncpg.Connection) -> None:
 
 
 async def preflight(connection: asyncpg.Connection) -> None:
-    required_columns = {
-        "users": {
-            "id",
-            "telegram_id",
-            "username",
-            "display_name",
-            "tokens",
-            "xp",
-            "total_xp",
-            "weekly_goal",
-            "balance",
-            "level",
-            "ref_code",
-            "referred_by",
-            "referrals_count",
-            "created_at",
-        },
-        "pullups": {
-            "id",
-            "user_id",
-            "video_file_id",
-            "file_path",
-            "file_url",
-            "source",
-            "caption",
-            "count",
-            "status",
-            "moderator_id",
-            "reject_reason",
-            "created_at",
-            "moderated_at",
-            "rewards_applied",
-        },
-        "submissions": {
-            "id",
-            "user_id",
-            "type",
-            "value",
-            "video_file_id",
-            "video_url",
-            "status",
-            "moderator_comment",
-            "created_at",
-            "reviewed_at",
-            "rewards_applied",
-        },
-        "user_challenges": {
-            "id",
-            "user_id",
-            "challenge_id",
-            "progress",
-            "xp",
-            "level",
-            "completed",
-            "completed_at",
-            "created_at",
-        },
-        "token_transactions": {
-            "id",
-            "user_id",
-            "amount",
-            "reason",
-            "source_type",
-            "source_id",
-            "created_at",
-        },
-        "xp_transactions": {
-            "id",
-            "user_id",
-            "challenge_key",
-            "xp_amount",
-            "source_type",
-            "source_id",
-            "created_at",
-        },
-    }
-
-    for table, expected in required_columns.items():
+    for table, expected in REQUIRED_COLUMNS.items():
         rows = await connection.fetch(
             """
             SELECT column_name
@@ -148,6 +72,8 @@ async def preflight(connection: asyncpg.Connection) -> None:
                 f"{', '.join(missing)}"
             )
         print(f"public.{table}: compatible ({len(actual)} columns)")
+
+    await validate_required_schema(connection)
 
     challenges_exists = await connection.fetchval(
         "SELECT to_regclass('public.challenges') IS NOT NULL"
@@ -183,6 +109,8 @@ async def verify(connection: asyncpg.Connection) -> None:
             "Required migrations are not recorded: "
             + ", ".join(sorted(missing_versions))
         )
+
+    await validate_required_schema(connection)
 
     submission_constraint = await connection.fetchval(
         """

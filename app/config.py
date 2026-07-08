@@ -27,6 +27,20 @@ DATABASE_ENV_KEYS = (
     "DB_USER",
     "DB_PASSWORD",
 )
+PUBLIC_CORS_ORIGINS = (
+    "https://pullupbot.vercel.app",
+    "https://pullupbot-proruner13-pixels-projects.vercel.app",
+    "https://pullupbot-proruner13-pixel-proruner13-pixels-projects.vercel.app",
+    "https://pullup.vercel.app",
+    "https://pullup-proruner13-pixels-projects.vercel.app",
+    "https://pullup-dun.vercel.app",
+    "https://pullup-proruner13-pixel-proruner13-pixels-projects.vercel.app",
+    "https://pullup-backend-dtxl.onrender.com",
+)
+LOCAL_CORS_ORIGINS = (
+    "http://localhost:5173",
+    "http://localhost:3000",
+)
 
 
 def load_project_env() -> Path:
@@ -195,14 +209,17 @@ class Settings:
         if is_placeholder(bot_token):
             bot_token = ""
 
-        origins = tuple(
+        configured_origins = tuple(
             origin.strip().rstrip("/")
-            for origin in os.getenv(
-                "CORS_ORIGINS",
-                "http://localhost:5173,https://pullupbot.vercel.app",
-            ).split(",")
+            for origin in os.getenv("CORS_ORIGINS", "").split(",")
             if origin.strip()
         )
+        default_origins = (
+            PUBLIC_CORS_ORIGINS
+            if environment == "production"
+            else LOCAL_CORS_ORIGINS + PUBLIC_CORS_ORIGINS
+        )
+        origins = tuple(dict.fromkeys((*configured_origins, *default_origins)))
 
         upload_dir_value = os.getenv("UPLOAD_DIR", "uploads").strip() or "uploads"
         upload_dir = Path(upload_dir_value)

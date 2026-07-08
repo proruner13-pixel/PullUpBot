@@ -23,7 +23,7 @@ services:
       - key: WEBAPP_URL
         value: https://pullupbot.vercel.app
       - key: CORS_ORIGINS
-        value: https://pullupbot.vercel.app
+        value: https://pullupbot.vercel.app,https://pullupbot-proruner13-pixels-projects.vercel.app,https://pullupbot-proruner13-pixel-proruner13-pixels-projects.vercel.app,https://pullup.vercel.app,https://pullup-proruner13-pixels-projects.vercel.app,https://pullup-dun.vercel.app,https://pullup-proruner13-pixel-proruner13-pixels-projects.vercel.app,https://pullup-backend-dtxl.onrender.com
       - key: ADMIN_ID
         sync: false
       - key: TELEGRAM_AUTH_MAX_AGE
@@ -51,7 +51,7 @@ services:
       - key: WEBAPP_URL
         value: https://pullupbot.vercel.app
       - key: CORS_ORIGINS
-        value: https://pullupbot.vercel.app
+        value: https://pullupbot.vercel.app,https://pullupbot-proruner13-pixels-projects.vercel.app,https://pullupbot-proruner13-pixel-proruner13-pixels-projects.vercel.app,https://pullup.vercel.app,https://pullup-proruner13-pixels-projects.vercel.app,https://pullup-dun.vercel.app,https://pullup-proruner13-pixel-proruner13-pixels-projects.vercel.app,https://pullup-backend-dtxl.onrender.com
       - key: ADMIN_ID
         sync: false
       - key: TELEGRAM_AUTH_MAX_AGE

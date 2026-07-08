@@ -57,7 +57,6 @@ export function normalizeProfileResponse(payload: unknown): ProfileDto {
             profile.avatar_url ?? profile.photo_url
         ),
         tokens: numberValue(profile.tokens, 0),
-        balance: numberValue(profile.balance, numberValue(profile.tokens, 0)),
         xp,
         total_xp: xp,
         level: numberValue(profile.level, 1),

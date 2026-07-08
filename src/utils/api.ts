@@ -5,6 +5,7 @@ import {
     getApiUrl,
     getApiUrlSource,
     isApiEnabled,
+    PullupApiError,
     type ProfileDto,
 } from "../api/client";
 import { DEMO_API_USER, createDemoDashboard } from "../mocks/data";
@@ -105,7 +106,7 @@ function profileToApiUser(profile: ProfileDto): ApiUser {
         last_name: profile.last_name,
         photo_url: profile.avatar_url,
         tokens: profile.tokens,
-        balance: profile.balance,
+        balance: profile.tokens,
         total_xp: profile.xp,
         level: profile.level,
         next_level_progress: profile.next_level_progress,
@@ -311,10 +312,21 @@ export async function fetchDashboard(
             mode: "telegram",
         };
     } catch (reason) {
-        const message =
+        let message =
             reason instanceof Error
                 ? reason.message
                 : "Не удалось подключиться к PULLUP API";
+        if (reason instanceof PullupApiError) {
+            if (reason.kind === "network") {
+                message = `Backend недоступен или CORS/preflight заблокирован. ${reason.method} ${reason.requestUrl}. ${reason.message}`;
+            } else if (reason.kind === "auth") {
+                message = `Backend вернул ${reason.status}: Telegram initData не принят или доступ запрещён. ${reason.method} ${reason.requestUrl}.`;
+            } else if (reason.kind === "config") {
+                message = reason.message;
+            } else if (reason.status) {
+                message = `Backend вернул ${reason.status}. ${reason.method} ${reason.requestUrl}.`;
+            }
+        }
         console.error("[TelegramAuth] backend auth/dashboard failed", {
             message,
             reason,

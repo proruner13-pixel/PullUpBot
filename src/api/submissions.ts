@@ -1,4 +1,9 @@
-import { API_URL, getApiConfigurationError } from "./client";
+import {
+    API_URL,
+    PullupApiError,
+    getApiConfigurationError,
+    getApiUrlSource,
+} from "./client";
 
 export interface SubmissionResponse {
     id: number;
@@ -27,11 +32,21 @@ export async function submitVideo(
     // Проверка конфигурации API
     const configError = getApiConfigurationError();
     if (configError) {
-        throw new Error(`API не настроен: ${configError}`);
+        throw new PullupApiError({
+            kind: "config",
+            message: `API не настроен: ${configError}`,
+            requestUrl: API_URL ? `${API_URL}/submissions` : "/submissions",
+            method: "POST",
+        });
     }
 
     if (!API_URL) {
-        throw new Error("API_URL не определён. Невозможно отправить видео.");
+        throw new PullupApiError({
+            kind: "config",
+            message: "VITE_API_URL не определён. Невозможно отправить видео.",
+            requestUrl: "/submissions",
+            method: "POST",
+        });
     }
 
     const formData = new FormData();
@@ -113,19 +128,50 @@ export async function submitVideo(
                         console.error("[DEV] submitVideo error message:", errorMessage);
                     }
                     console.error("VIDEO_UPLOAD_FAILED", {
+                        url,
+                        method: "POST",
                         status: xhr.status,
                         message: errorMessage,
                     });
-                    reject(new Error(errorMessage));
+                    reject(
+                        new PullupApiError({
+                            kind:
+                                xhr.status === 401 || xhr.status === 403
+                                    ? "auth"
+                                    : "http",
+                            message:
+                                xhr.status === 401 || xhr.status === 403
+                                    ? `Backend вернул ${xhr.status}: Telegram initData не принят или доступ запрещён. Request: POST ${url}. Detail: ${errorMessage}`
+                                    : `Backend вернул ${xhr.status}. Request: POST ${url}. Detail: ${errorMessage}`,
+                            requestUrl: url,
+                            method: "POST",
+                            status: xhr.status,
+                        })
+                    );
                 }
             } catch (error) {
-                console.error("VIDEO_UPLOAD_FAILED", error);
-                reject(
-                    new Error(
+                console.error("VIDEO_UPLOAD_FAILED", {
+                    url,
+                    method: "POST",
+                    message:
                         error instanceof Error
                             ? error.message
-                            : "Ошибка при обработке ответа сервера"
-                    )
+                            : "response processing failed",
+                    error,
+                });
+                reject(
+                    error instanceof PullupApiError
+                        ? error
+                        : new PullupApiError({
+                              kind: "parse",
+                              message:
+                                  error instanceof Error
+                                      ? error.message
+                                      : "Ошибка при обработке ответа сервера",
+                              requestUrl: url,
+                              method: "POST",
+                              status: xhr.status || undefined,
+                          })
                 );
             }
         });
@@ -137,10 +183,24 @@ export async function submitVideo(
                 console.error("[DEV] submitVideo CORS may be blocked or backend unreachable");
             }
             console.error("VIDEO_UPLOAD_FAILED", {
-                message: "network error",
                 url,
+                method: "POST",
+                status: xhr.status || undefined,
+                message: "network error",
+                apiBaseUrl: API_URL,
+                apiUrlSource: getApiUrlSource(),
             });
-            reject(new Error("Ошибка сети при отправке видео. Проверьте подключение и попробуйте снова."));
+            reject(
+                new PullupApiError({
+                    kind: "network",
+                    message:
+                        `CORS/network error: backend недоступен или preflight заблокирован. ` +
+                        `Request: POST ${url}.`,
+                    requestUrl: url,
+                    method: "POST",
+                    status: xhr.status || undefined,
+                })
+            );
         });
 
         xhr.addEventListener("abort", () => {
@@ -150,8 +210,16 @@ export async function submitVideo(
             console.error("VIDEO_UPLOAD_FAILED", {
                 message: "aborted",
                 url,
+                method: "POST",
             });
-            reject(new Error("Отправка видео отменена"));
+            reject(
+                new PullupApiError({
+                    kind: "network",
+                    message: `Отправка видео отменена. Request: POST ${url}.`,
+                    requestUrl: url,
+                    method: "POST",
+                })
+            );
         });
 
         // Добавляем токен авторизации
@@ -172,11 +240,15 @@ export async function submitVideo(
             }
             console.error("VIDEO_UPLOAD_FAILED", error);
             reject(
-                new Error(
-                    error instanceof Error
-                        ? `Ошибка при инициализации запроса: ${error.message}`
-                        : "Не удалось инициализировать отправку видео"
-                )
+                new PullupApiError({
+                    kind: "network",
+                    message:
+                        error instanceof Error
+                            ? `Ошибка при инициализации запроса POST ${url}: ${error.message}`
+                            : `Не удалось инициализировать отправку видео POST ${url}`,
+                    requestUrl: url,
+                    method: "POST",
+                })
             );
         }
     });
@@ -190,6 +262,17 @@ export async function getMySubmissions(
     offset: number = 0,
     initData?: string
 ): Promise<SubmissionResponse[]> {
+    const configError = getApiConfigurationError();
+    const url = `${API_URL}/submissions?limit=${limit}&offset=${offset}`;
+    if (configError) {
+        throw new PullupApiError({
+            kind: "config",
+            message: configError,
+            requestUrl: url,
+            method: "GET",
+        });
+    }
+
     const headers: Record<string, string> = {
         "Content-Type": "application/json",
     };
@@ -200,13 +283,41 @@ export async function getMySubmissions(
         headers["Authorization"] = `tma ${window.Telegram.WebApp.initData}`;
     }
 
-    const response = await fetch(
-        `${API_URL}/submissions?limit=${limit}&offset=${offset}`,
-        {
+    let response: Response;
+    try {
+        response = await fetch(
+            url,
+            {
             method: "GET",
             headers,
-        }
-    );
+            }
+        );
+    } catch (error) {
+        const message =
+            error instanceof Error ? error.message : "Network request failed";
+        console.error("[PULLUP API] submissions fetch failed", {
+            url,
+            method: "GET",
+            message,
+            apiBaseUrl: API_URL,
+            apiUrlSource: getApiUrlSource(),
+        });
+        throw new PullupApiError({
+            kind: "network",
+            message:
+                `CORS/network error: backend недоступен или preflight заблокирован. ` +
+                `Request: GET ${url}. Detail: ${message}`,
+            requestUrl: url,
+            method: "GET",
+        });
+    }
+
+    console.info("[PULLUP API] submissions response", {
+        url,
+        method: "GET",
+        status: response.status,
+        ok: response.ok,
+    });
 
     if (!response.ok) {
         let errorMessage = `Ошибка сервера: ${response.status}`;
@@ -218,7 +329,19 @@ export async function getMySubmissions(
         } catch {
             // Используем стандартное сообщение об ошибке
         }
-        throw new Error(errorMessage);
+        throw new PullupApiError({
+            kind:
+                response.status === 401 || response.status === 403
+                    ? "auth"
+                    : "http",
+            message:
+                response.status === 401 || response.status === 403
+                    ? `Backend вернул ${response.status}: Telegram initData не принят или доступ запрещён. Request: GET ${url}. Detail: ${errorMessage}`
+                    : `Backend вернул ${response.status}. Request: GET ${url}. Detail: ${errorMessage}`,
+            requestUrl: url,
+            method: "GET",
+            status: response.status,
+        });
     }
 
     return (await response.json()) as SubmissionResponse[];

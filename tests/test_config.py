@@ -85,9 +85,25 @@ class ConfigTests(unittest.TestCase):
             clear=False,
         ):
             settings = Settings.from_env()
-        self.assertEqual(
+        self.assertIn("https://pullupbot.vercel.app", settings.cors_origins)
+        self.assertNotIn("https://pullupbot.vercel.app/", settings.cors_origins)
+
+    def test_default_cors_origins_include_vercel_domains(self) -> None:
+        with patch.dict(
+            "os.environ",
+            {
+                "APP_ENV": "development",
+                "DATABASE_URL": "postgresql://postgres:secret@localhost:5433/pullup",
+            },
+            clear=False,
+        ):
+            settings = Settings.from_env()
+
+        self.assertIn("https://pullupbot.vercel.app", settings.cors_origins)
+        self.assertIn("https://pullup.vercel.app", settings.cors_origins)
+        self.assertIn(
+            "https://pullup-backend-dtxl.onrender.com",
             settings.cors_origins,
-            ("https://pullupbot.vercel.app",),
         )
 
     def test_template_database_url_falls_back_to_complete_db_fields(self) -> None:

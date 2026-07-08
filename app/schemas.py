@@ -15,7 +15,6 @@ class UserResponse(BaseModel):
     username: str | None
     photo_url: str | None
     tokens: int
-    balance: int
     xp: int
     total_xp: int
     level: int
@@ -49,7 +48,6 @@ class ProfileResponse(BaseModel):
     last_name: str | None
     avatar_url: str | None
     tokens: int
-    balance: int
     xp: int
     total_xp: int
     level: int

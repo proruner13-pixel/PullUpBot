@@ -165,7 +165,6 @@ async def apply_workout_rewards(
         """
         UPDATE users
         SET tokens = tokens + $2,
-            balance = balance + $2,
             xp = COALESCE(xp, 0) + $3,
             total_xp = COALESCE(total_xp, 0) + $3,
             level = $4
