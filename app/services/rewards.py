@@ -181,46 +181,39 @@ async def apply_workout_rewards(
         INSERT INTO user_challenges (
             user_id,
             challenge_id,
-            progress,
-            xp,
-            level
+            progress
         )
         SELECT
             $1,
             challenge.id,
-            $3,
-            $4,
-            ($4 / 100) + 1
+            $3
         FROM challenges AS challenge
         WHERE challenge.slug = $2
         ON CONFLICT (user_id, challenge_id) DO UPDATE
         SET progress = CASE
-                WHEN $5 THEN user_challenges.progress + EXCLUDED.progress
+                WHEN $4 THEN user_challenges.progress + EXCLUDED.progress
                 ELSE user_challenges.progress
             END,
-            xp = user_challenges.xp + EXCLUDED.xp,
-            level = ((user_challenges.xp + EXCLUDED.xp) / 100) + 1,
             completed = CASE
-                WHEN $5
+                WHEN $4
                     THEN (user_challenges.progress + EXCLUDED.progress) >= (
                         SELECT goal FROM challenges WHERE id = EXCLUDED.challenge_id
                     )
                 ELSE user_challenges.completed
             END,
             completed_at = CASE
-                WHEN $5
+                WHEN $4
                  AND (user_challenges.progress + EXCLUDED.progress) >= (
                         SELECT goal FROM challenges WHERE id = EXCLUDED.challenge_id
                     )
                     THEN COALESCE(user_challenges.completed_at, NOW())
-                WHEN $5 THEN NULL
+                WHEN $4 THEN NULL
                 ELSE user_challenges.completed_at
             END
         """,
         user["telegram_id"],
         activity_type,
         progress,
-        xp_amount,
         update_progress,
     )
     if challenge_result == "INSERT 0 0":
