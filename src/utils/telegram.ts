@@ -13,10 +13,25 @@ export function getTelegramWebApp(): TelegramWebApp | null {
 
     try {
         webApp.ready?.();
+        webApp.expand?.();
     } catch {
         // The SDK may expose a partial object outside Telegram.
     }
     return webApp;
+}
+
+function logTelegramState(
+    label: string,
+    webApp: TelegramWebApp | null = window.Telegram?.WebApp ?? null
+): void {
+    console.info("[TelegramAuth]", label, {
+        hasWindowTelegram: Boolean(window.Telegram),
+        hasTelegramWebApp: Boolean(window.Telegram?.WebApp),
+        initDataLength: webApp?.initData?.length ?? 0,
+        hasInitDataUnsafeUser: Boolean(webApp?.initDataUnsafe?.user),
+        platform: webApp?.platform ?? null,
+        version: webApp?.version ?? null,
+    });
 }
 
 export function hasTelegramScript(): boolean {
@@ -71,20 +86,30 @@ export function detectAppMode(
 }
 
 export async function waitForTelegramWebApp(
-    timeoutMs = 1_200
+    timeoutMs = 2_000
 ): Promise<TelegramWebApp | null> {
-    const immediate = getTelegramWebApp();
-    if (immediate) return immediate;
-
     const startedAt = Date.now();
+    let attempts = 0;
+
     return new Promise((resolve) => {
         const check = () => {
+            attempts += 1;
             const webApp = getTelegramWebApp();
-            if (webApp || Date.now() - startedAt >= timeoutMs) {
+            const hasInitData = Boolean(webApp?.initData?.trim());
+
+            logTelegramState(`attempt ${attempts}`, webApp);
+
+            if (webApp && hasInitData) {
                 resolve(webApp);
                 return;
             }
-            window.setTimeout(check, 50);
+
+            if (Date.now() - startedAt >= timeoutMs) {
+                logTelegramState("timeout", webApp);
+                resolve(webApp);
+                return;
+            }
+            window.setTimeout(check, 120);
         };
         check();
     });

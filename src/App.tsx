@@ -1,4 +1,4 @@
-import { useEffect, useMemo,useRef, useState } from "react";
+import { useCallback, useEffect, useMemo,useRef, useState } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
     Activity,
@@ -50,6 +50,7 @@ import {
 import { updateProfileAvatar } from "./api/profile";
 import {
     getMySubmissions,
+    submitVideo,
     type SubmissionResponse,
 } from "./api/submissions";
 import AvatarPickerModal from "./components/AvatarPickerModal";
@@ -1259,7 +1260,6 @@ function AddWorkoutModal({
         setIsLoading(true);
         setUploadProgress(0);
         try {
-            const { submitVideo } = await import("./api/submissions");
             const initData = window.Telegram?.WebApp?.initData;
 
             if (import.meta.env.DEV) {
@@ -1446,6 +1446,7 @@ export default function App() {
     const [apiHealthResponse, setApiHealthResponse] =
         useState<ApiHealthResponse | null>(null);
     const [loading, setLoading] = useState(true);
+    const [authRetryNonce, setAuthRetryNonce] = useState(0);
     const [error, setError] = useState<string | null>(null);
     const [showWorkoutModal, setShowWorkoutModal] = useState(false);
     const [showAvatarPicker, setShowAvatarPicker] = useState(false);
@@ -1492,8 +1493,24 @@ export default function App() {
         const load = async () => {
             try {
                 const loadedWorkouts: WorkoutEntry[] = [];
+                setError(null);
+                console.info("[TelegramAuth] app auth load started", {
+                    attempt: authRetryNonce + 1,
+                    hasWindowTelegram: Boolean(window.Telegram),
+                    hasTelegramWebApp: Boolean(window.Telegram?.WebApp),
+                    initDataLength: window.Telegram?.WebApp?.initData?.length ?? 0,
+                    hasInitDataUnsafeUser: Boolean(
+                        window.Telegram?.WebApp?.initDataUnsafe?.user
+                    ),
+                });
                 const telegram = await getTelegramWebAppData();
                 if (!active) return;
+                console.info("[TelegramAuth] app received Telegram data", {
+                    mode: telegram.mode,
+                    isTelegramContext: telegram.isTelegramContext,
+                    initDataLength: telegram.initData?.length ?? 0,
+                    hasUser: Boolean(telegram.user),
+                });
 
                 if (telegram.isTelegramContext) {
                     setDashboardMode(telegram.mode);
@@ -1517,6 +1534,7 @@ export default function App() {
                         try {
                             const health = await checkApiHealth();
                             if (!active) return;
+                            console.info("[TelegramAuth] backend health response", health);
                             setApiHealthResponse(health);
                             setApiHealthStatus(
                                 health.status === "ok"
@@ -1525,6 +1543,9 @@ export default function App() {
                             );
                         } catch (healthReason) {
                             if (!active) return;
+                            console.warn("[TelegramAuth] backend health failed", {
+                                reason: healthReason,
+                            });
                             setApiHealthStatus("backend-error");
                             setApiHealthError(
                                 healthReason instanceof Error
@@ -1549,6 +1570,12 @@ export default function App() {
                     },
                 });
                 if (!active) return;
+                console.info("[TelegramAuth] dashboard loaded", {
+                    mode: data.mode,
+                    userId: data.user.telegram_id,
+                    challenges: data.challenges.length,
+                    achievements: data.achievements.length,
+                });
                 setUser(data.user);
                 setApiChallenges(data.challenges);
                 setAchievements(data.achievements);
@@ -1609,6 +1636,7 @@ export default function App() {
                 setError(null);
             } catch (reason) {
                 if (!active) return;
+                console.error("[TelegramAuth] app auth load failed", reason);
                 if (isTelegramApiError(reason)) {
                     const failureUser =
                         reason.backendUser ?? reason.telegramUser;
@@ -1627,7 +1655,7 @@ export default function App() {
                             : "backend-error"
                     );
                     // Instead of clearing challenges on error, fallback to demo set
-                    const demo = createDemoDashboard(failureUser ?? undefined, "telegram-error");
+                    const demo = createDemoDashboard(failureUser ?? undefined, reason.mode);
                     setApiChallenges(demo.challenges);
                     setAchievements(demo.achievements);
                     setDashboardMode(reason.mode);
@@ -1660,7 +1688,7 @@ export default function App() {
             active = false;
             window.clearInterval(timer);
         };
-    }, []);
+    }, [authRetryNonce]);
 
     const challenges = useMemo(
         () =>
@@ -2070,6 +2098,24 @@ export default function App() {
         }
     };
 
+    const retryTelegramConnection = useCallback(() => {
+        console.info("[TelegramAuth] retry requested", {
+            hasWindowTelegram: Boolean(window.Telegram),
+            hasTelegramWebApp: Boolean(window.Telegram?.WebApp),
+            initDataLength: window.Telegram?.WebApp?.initData?.length ?? 0,
+            hasInitDataUnsafeUser: Boolean(
+                window.Telegram?.WebApp?.initDataUnsafe?.user
+            ),
+        });
+        setLoading(true);
+        setError(null);
+        setAuthStatus("loading");
+        setApiHealthStatus("not-checked");
+        setApiHealthError(null);
+        setApiHealthResponse(null);
+        setAuthRetryNonce((current) => current + 1);
+    }, []);
+
     const handleMenuNavigation = (action: SideMenuAction) => {
         if (action === "leaderboard") {
             playOpen();
@@ -2380,7 +2426,7 @@ export default function App() {
                             : "Telegram-профиль не был загружен с сервера.")}
                 </p>
                 {authDebugPanel}
-                <button onClick={() => window.location.reload()}>
+                <button onClick={retryTelegramConnection}>
                     Повторить подключение
                 </button>
             </div>

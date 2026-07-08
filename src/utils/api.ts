@@ -149,6 +149,17 @@ export async function getTelegramWebAppData(): Promise<TelegramWebAppData> {
             ? import.meta.env.VITE_TELEGRAM_INIT_DATA
             : "") ||
         null;
+    console.info("[TelegramAuth] resolved WebApp data", {
+        hasWindowTelegram: Boolean(window.Telegram),
+        hasTelegramWebApp: Boolean(window.Telegram?.WebApp),
+        initDataLength: initData?.length ?? 0,
+        hasInitDataUnsafeUser: Boolean(telegramUser),
+        detectedMode: initData
+            ? "telegram"
+            : telegramUser
+              ? "telegram-error"
+              : detectAppMode(webApp),
+    });
     const detectedMode = initData
         ? "telegram"
         : telegramUser
@@ -210,6 +221,10 @@ export async function fetchDashboard(
     }
 
     if (!telegram.initData) {
+        console.warn("[TelegramAuth] initData missing after WebApp wait", {
+            hasUser: Boolean(telegram.user),
+            mode: telegram.mode,
+        });
         throw new TelegramApiError(
             "Telegram не передал подписанный initData. Закройте приложение и откройте его снова из меню бота.",
             telegram.user,
@@ -229,8 +244,19 @@ export async function fetchDashboard(
 
     let authenticatedUser: ApiUser | null = null;
     try {
+        console.info("[TelegramAuth] authenticating with backend", {
+            initDataLength: telegram.initData.length,
+            hasTelegramUser: Boolean(telegram.user),
+            apiUrl: getApiUrl(),
+        });
         const profile = await authenticateTelegram(telegram.initData);
         authenticatedUser = profileToApiUser(profile);
+        console.info("[TelegramAuth] backend profile response", {
+            telegram_id: authenticatedUser.telegram_id,
+            username: authenticatedUser.username,
+            tokens: authenticatedUser.tokens,
+            level: authenticatedUser.level,
+        });
         options.onBackendProfile?.(authenticatedUser);
 
         if (import.meta.env.DEV) {
@@ -257,6 +283,10 @@ export async function fetchDashboard(
                 return [] as ApiAchievement[];
             }),
         ]);
+        console.info("[TelegramAuth] backend dashboard response", {
+            challenges: challenges.length,
+            achievements: achievements.length,
+        });
 
         // Fallback: if backend returned empty challenges, use demo set
         const finalChallenges = (challenges && challenges.length > 0)
@@ -285,11 +315,15 @@ export async function fetchDashboard(
             reason instanceof Error
                 ? reason.message
                 : "Не удалось подключиться к PULLUP API";
-        // Instead of throwing, return demo dashboard with telegram-error mode
-        if (import.meta.env.DEV) {
-            console.error("[DEV] fetchDashboard error:", reason);
-        }
-        const demo = createDemoDashboard(telegram.user ?? undefined, "telegram-error");
-        return demo;
+        console.error("[TelegramAuth] backend auth/dashboard failed", {
+            message,
+            reason,
+        });
+        throw new TelegramApiError(
+            message,
+            telegram.user,
+            "api-error",
+            authenticatedUser
+        );
     }
 }

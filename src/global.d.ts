@@ -13,6 +13,7 @@ interface Window {
                 };
             };
             ready?: () => void;
+            expand?: () => void;
             version?: string;
             platform?: string;
             colorScheme?: "light" | "dark";

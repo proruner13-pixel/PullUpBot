@@ -155,6 +155,13 @@ export async function apiRequest<T>(
         headers,
     });
 
+    console.info("[PULLUP API] response", {
+        path,
+        method: init?.method ?? "GET",
+        status: response.status,
+        ok: response.ok,
+    });
+
     if (import.meta.env.DEV) {
         console.log("[DEV] apiRequest response status:", response.status, response.statusText);
         try {
