@@ -16,7 +16,6 @@ export const DEMO_API_USER: ApiUser = {
     last_name: null,
     photo_url: null,
     tokens: 0,
-    balance: 0,
     total_xp: 0,
     level: 1,
     next_level_progress: 0,
@@ -37,13 +36,15 @@ export function createDemoDashboard(
     user: ApiUser = DEMO_API_USER,
     mode: DashboardMode = "demo"
 ): DashboardData {
+    const isDefaultDemoUser = user.telegram_id === DEMO_TELEGRAM_ID;
     return {
         user: {
             ...user,
-            tokens: 0,
-            balance: 0,
-            total_xp: 0,
-            next_level_progress: 0,
+            tokens: isDefaultDemoUser ? 0 : user.tokens,
+            total_xp: isDefaultDemoUser ? 0 : user.total_xp,
+            next_level_progress: isDefaultDemoUser
+                ? 0
+                : user.next_level_progress,
             referrals_count: 0,
         },
         mode,

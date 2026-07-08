@@ -131,7 +131,6 @@ CREATE TABLE IF NOT EXISTS users (
     username TEXT,
     display_name TEXT,
     tokens INT NOT NULL DEFAULT 0,
-    balance BIGINT NOT NULL DEFAULT 0,
     xp INT NOT NULL DEFAULT 0,
     total_xp INT NOT NULL DEFAULT 0,
     level INT NOT NULL DEFAULT 1,
@@ -201,7 +200,6 @@ CREATE INDEX IF NOT EXISTS idx_users_telegram_id ON users(telegram_id);
 # На всякий случай "мягко" добавим недостающие колонки (если будем расширять)
 ALTERS = [
     ("users", "display_name", "TEXT"),
-    ("users", "balance", "BIGINT NOT NULL DEFAULT 0"),
     ("users", "xp", "INT NOT NULL DEFAULT 0"),
     ("users", "total_xp", "INT NOT NULL DEFAULT 0"),
     ("users", "level", "INT NOT NULL DEFAULT 1"),
@@ -741,9 +739,9 @@ async def cmd_tokens(message: Message):
         message.from_user.username,
         message.from_user.full_name,
     )
-    balance = await get_tokens(message.from_user.id)
+    tokens = await get_tokens(message.from_user.id)
     await message.answer(
-        f"<b>Баланс: {balance} PULLUP</b>\n\n"
+        f"<b>Баланс: {tokens} PULLUP</b>\n\n"
         "История наград и полный прогресс доступны в приложении.",
         reply_markup=app_keyboard(text="Открыть баланс"),
     )

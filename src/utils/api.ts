@@ -22,7 +22,6 @@ export interface ApiUser {
     last_name: string | null;
     photo_url: string | null;
     tokens: number;
-    balance: number;
     total_xp: number;
     level: number;
     next_level_progress: number;
@@ -106,7 +105,6 @@ function profileToApiUser(profile: ProfileDto): ApiUser {
         last_name: profile.last_name,
         photo_url: profile.avatar_url,
         tokens: profile.tokens,
-        balance: profile.tokens,
         total_xp: profile.xp,
         level: profile.level,
         next_level_progress: profile.next_level_progress,
@@ -132,7 +130,6 @@ function telegramUserToApiUser(
         last_name: telegramUser.last_name ?? null,
         photo_url: telegramUser.photo_url ?? null,
         tokens: 0,
-        balance: 0,
         total_xp: 0,
         level: 1,
         next_level_progress: 0,

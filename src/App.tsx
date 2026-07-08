@@ -1058,7 +1058,7 @@ function ProfileScreen({
             <div className="profile-stats">
                 <div>
                     <span>Токены</span>
-                    <strong>🪙 {user.balance}</strong>
+                    <strong>🪙 {user.tokens}</strong>
                 </div>
                 <div>
                     <span>Опыт</span>
@@ -1522,7 +1522,7 @@ export default function App() {
                             ? "authenticating"
                             : "telegram-error"
                     );
-                    if (telegram.user) {
+                    if (telegram.user && !telegram.initData) {
                         setUser(telegram.user);
                         setLoading(false);
                     }
@@ -1640,7 +1640,7 @@ export default function App() {
                 if (isTelegramApiError(reason)) {
                     const failureUser =
                         reason.backendUser ?? reason.telegramUser;
-                    setUser(failureUser);
+                    setUser((current) => failureUser ?? current);
                     setBackendProfile(reason.backendUser);
                     setProfileSource(
                         reason.backendUser
@@ -1661,7 +1661,7 @@ export default function App() {
                     setDashboardMode(reason.mode);
                     setWeeklyWorkouts(readDemoWorkouts());
                 } else {
-                    setUser(null);
+                    setUser((current) => current);
                     setBackendProfile(null);
                     setProfileSource("none");
                     setAuthStatus("backend-error");

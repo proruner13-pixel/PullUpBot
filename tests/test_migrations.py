@@ -13,6 +13,9 @@ MIGRATION_002 = (
     PROJECT_ROOT / "migrations" / "002_shared_product_schema.up.sql"
 )
 SCHEMA_SNAPSHOT = PROJECT_ROOT / "sql" / "schema.sql"
+MIGRATION_005 = (
+    PROJECT_ROOT / "migrations" / "005_xp_rewards.up.sql"
+)
 
 
 def sql_without_comments(path: Path) -> str:
@@ -60,6 +63,14 @@ class MigrationChainTests(unittest.TestCase):
         )
         for pattern in forbidden:
             self.assertIsNone(re.search(pattern, sql), pattern)
+
+    def test_005_adds_xp_without_balance(self) -> None:
+        sql = MIGRATION_005.read_text(encoding="utf-8").upper()
+        self.assertIn("ADD COLUMN IF NOT EXISTS XP", sql)
+        self.assertIn("ADD COLUMN IF NOT EXISTS TOTAL_XP", sql)
+        self.assertIn("CREATE TABLE IF NOT EXISTS PUBLIC.XP_TRANSACTIONS", sql)
+        self.assertIn("FIRST_PULLUP_SUBMISSION", sql)
+        self.assertNotIn("BALANCE", sql)
 
 
 if __name__ == "__main__":

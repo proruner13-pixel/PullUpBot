@@ -56,6 +56,39 @@ CREATE UNIQUE INDEX IF NOT EXISTS uq_token_transactions_reward_source
     WHERE source_id IS NOT NULL
       AND source_type IN ('submission', 'pullup');
 
+INSERT INTO public.achievements (
+    slug,
+    title,
+    description,
+    category,
+    icon,
+    requirement_type,
+    requirement_value,
+    reward_tokens,
+    is_active
+)
+VALUES
+    ('first_pullup_submission', 'Первое подтягивание', 'Первая одобренная тренировка по подтягиваниям', 'pullups', '💪', 'first_pullup_submission', 1, 0, TRUE),
+    ('pullups_10', '10 подтягиваний', 'Суммарно 10 подтягиваний', 'pullups', '🔟', 'total_pullups', 10, 0, TRUE),
+    ('pullups_50', '50 подтягиваний', 'Суммарно 50 подтягиваний', 'pullups', '🏆', 'total_pullups', 50, 0, TRUE),
+    ('pullups_100', '100 подтягиваний', 'Суммарно 100 подтягиваний', 'pullups', '👑', 'total_pullups', 100, 0, TRUE),
+    ('pushups_50', '50 отжиманий', 'Суммарно 50 отжиманий', 'pushups', '🔥', 'total_pushups', 50, 0, TRUE),
+    ('pushups_100', '100 отжиманий', 'Суммарно 100 отжиманий', 'pushups', '💥', 'total_pushups', 100, 0, TRUE),
+    ('run_1km', 'Первый километр', 'Суммарно 1 км бега', 'running', '🏃', 'total_running_km', 1, 0, TRUE),
+    ('run_10km', '10 км', 'Суммарно 10 км бега', 'running', '⚡', 'total_running_km', 10, 0, TRUE),
+    ('run_50km', '50 км', 'Суммарно 50 км бега', 'running', '🥇', 'total_running_km', 50, 0, TRUE),
+    ('plank_60s', '60 секунд планки', 'Суммарно 60 секунд планки', 'plank', '🧘', 'total_plank_seconds', 60, 0, TRUE),
+    ('plank_300s', '300 секунд планки', 'Суммарно 300 секунд планки', 'plank', '🧱', 'total_plank_seconds', 300, 0, TRUE)
+ON CONFLICT (slug) DO UPDATE
+SET title = EXCLUDED.title,
+    description = EXCLUDED.description,
+    category = EXCLUDED.category,
+    icon = EXCLUDED.icon,
+    requirement_type = EXCLUDED.requirement_type,
+    requirement_value = EXCLUDED.requirement_value,
+    reward_tokens = EXCLUDED.reward_tokens,
+    is_active = EXCLUDED.is_active;
+
 INSERT INTO public.schema_migrations (version, name)
 VALUES ('005', 'xp rewards and reward idempotency')
 ON CONFLICT (version) DO NOTHING;

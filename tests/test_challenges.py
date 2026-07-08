@@ -20,6 +20,16 @@ class FakeConnection:
 
 class FakeRouteConnection:
     async def fetch(self, query: str, *args: object) -> list[dict[str, object]]:
+        if "user_achievements" in query:
+            return [
+                {
+                    "code": "pullups_50",
+                    "title": "50 подтягиваний",
+                    "icon": "🏆",
+                }
+            ]
+        if "WITH user_totals" in query:
+            return []
         return [
             {
                 "exercise": "pullups",
@@ -50,10 +60,8 @@ class ChallengeRepositoryTests(unittest.IsolatedAsyncioTestCase):
 
         self.assertEqual(connection.args, (123456,))
         self.assertIn("user_challenge.progress", connection.query)
-        self.assertIn("0::INTEGER AS xp", connection.query)
-        self.assertIn("1::INTEGER AS level", connection.query)
-        self.assertNotIn("user_challenge.xp", connection.query)
-        self.assertNotIn("user_challenge.level", connection.query)
+        self.assertIn("user_challenge.xp", connection.query)
+        self.assertIn("user_challenge.level", connection.query)
 
 
 class ChallengeRouteTests(unittest.IsolatedAsyncioTestCase):
@@ -71,7 +79,7 @@ class ChallengeRouteTests(unittest.IsolatedAsyncioTestCase):
             database=FakeDatabase(),
         )
 
-        self.assertEqual(result[0].code, "pullups_30")
+        self.assertEqual(result[0].code, "pullups_50")
 
 
 if __name__ == "__main__":
