@@ -183,6 +183,7 @@ class Settings:
     admin_id: int
     webapp_url: str
     api_url: str
+    upload_dir: Path
     telegram_auth_max_age: int
     cors_origins: tuple[str, ...]
 
@@ -195,13 +196,18 @@ class Settings:
             bot_token = ""
 
         origins = tuple(
-            origin.strip()
+            origin.strip().rstrip("/")
             for origin in os.getenv(
                 "CORS_ORIGINS",
                 "http://localhost:5173,https://pullupbot.vercel.app",
             ).split(",")
             if origin.strip()
         )
+
+        upload_dir_value = os.getenv("UPLOAD_DIR", "uploads").strip() or "uploads"
+        upload_dir = Path(upload_dir_value)
+        if not upload_dir.is_absolute():
+            upload_dir = PROJECT_ROOT / upload_dir
 
         settings = cls(
             app_name=os.getenv("APP_NAME", "PULLUP API"),
@@ -211,6 +217,7 @@ class Settings:
             admin_id=int(os.getenv("ADMIN_ID", "0")),
             webapp_url=os.getenv("WEBAPP_URL", "").strip().rstrip("/"),
             api_url=os.getenv("API_URL", "").strip().rstrip("/"),
+            upload_dir=upload_dir,
             telegram_auth_max_age=int(
                 os.getenv("TELEGRAM_AUTH_MAX_AGE", "86400")
             ),
@@ -224,7 +231,11 @@ class Settings:
             for origin in settings.cors_origins:
                 _validate_production_url("CORS_ORIGINS", origin)
 
-            database_host = (urlsplit(settings.database_dsn).hostname or "").lower()
+            parsed_database = urlsplit(settings.database_dsn)
+            if parsed_database.scheme not in {"postgresql", "postgres"}:
+                raise RuntimeError("DATABASE_URL должен быть PostgreSQL URL")
+
+            database_host = (parsed_database.hostname or "").lower()
             if database_host in {"localhost", "127.0.0.1", "::1"}:
                 raise RuntimeError(
                     "DATABASE_URL не может указывать на localhost в production"

@@ -21,7 +21,11 @@ export interface ProfileDto {
     last_name: string | null;
     avatar_url: string | null;
     tokens: number;
+    balance: number;
+    xp: number;
+    total_xp: number;
     level: number;
+    next_level_progress: number;
     streak_days: number;
     ref_code: string | null;
     referred_by: number | null;
@@ -37,6 +41,9 @@ export interface ChallengeDto {
     reward_tokens: number;
     is_active: boolean;
     progress: number;
+    xp: number;
+    level: number;
+    next_level_progress: number;
     completed: boolean;
 }
 
@@ -186,7 +193,11 @@ function localProfile(): ProfileDto {
         last_name: null,
         avatar_url: user.avatarUrl ?? null,
         tokens: user.tokens,
+        balance: user.tokens,
+        xp: user.xp,
+        total_xp: user.xp,
         level: user.totalLevel,
+        next_level_progress: user.xp % 100,
         streak_days: user.streakDays,
         ref_code: "PULLUP-DEMO-123",
         referred_by: null,
@@ -238,6 +249,9 @@ export async function getChallenges(initData?: string): Promise<ChallengeDto[]> 
         reward_tokens: 0,
         is_active: true,
         progress: challenge.progress,
+        xp: challenge.xp,
+        level: challenge.level,
+        next_level_progress: challenge.xp % 100,
         completed: false,
     }));
 }

@@ -43,6 +43,11 @@ export function normalizeProfileResponse(payload: unknown): ProfileDto {
         throw new Error("Backend не вернул telegram_id");
     }
 
+    const xp = numberValue(
+        profile.xp,
+        numberValue(profile.total_xp, 0)
+    );
+
     return {
         telegram_id: telegramId,
         username: nullableString(profile.username),
@@ -52,7 +57,14 @@ export function normalizeProfileResponse(payload: unknown): ProfileDto {
             profile.avatar_url ?? profile.photo_url
         ),
         tokens: numberValue(profile.tokens, 0),
+        balance: numberValue(profile.balance, numberValue(profile.tokens, 0)),
+        xp,
+        total_xp: xp,
         level: numberValue(profile.level, 1),
+        next_level_progress: numberValue(
+            profile.next_level_progress,
+            xp % 100
+        ),
         streak_days: numberValue(profile.streak_days, 0),
         ref_code: nullableString(profile.ref_code),
         referred_by:

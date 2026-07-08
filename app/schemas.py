@@ -15,6 +15,11 @@ class UserResponse(BaseModel):
     username: str | None
     photo_url: str | None
     tokens: int
+    balance: int
+    xp: int
+    total_xp: int
+    level: int
+    next_level_progress: int
     referrals_count: int
 
 
@@ -22,7 +27,9 @@ class ChallengeResponse(BaseModel):
     exercise: str
     progress: int
     goal: int
+    xp: int
     level: int
+    next_level_progress: int
 
 
 class AchievementResponse(BaseModel):
@@ -42,7 +49,11 @@ class ProfileResponse(BaseModel):
     last_name: str | None
     avatar_url: str | None
     tokens: int
+    balance: int
+    xp: int
+    total_xp: int
     level: int
+    next_level_progress: int
     streak_days: int
     ref_code: str | None
     referred_by: int | None

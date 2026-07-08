@@ -8,7 +8,6 @@ from fastapi import APIRouter, Depends, Query, status, UploadFile, File, Form
 from fastapi import HTTPException, Request
 from pydantic import ValidationError
 
-from app.config import PROJECT_ROOT
 from app.auth import TelegramUser, get_current_user
 from app.database import Database
 from app.dependencies import get_database
@@ -24,7 +23,6 @@ from app.schemas import SubmissionCreateRequest, SubmissionResponse
 router = APIRouter(prefix="/submissions", tags=["submissions"])
 logger = logging.getLogger("pullup.api.submissions")
 
-UPLOAD_ROOT = PROJECT_ROOT / "uploads" / "submissions"
 MAX_UPLOAD_BYTES = 100 * 1024 * 1024
 
 
@@ -34,10 +32,15 @@ def _safe_filename(filename: str | None) -> str:
     return cleaned or "video.mp4"
 
 
-async def _save_upload(video: UploadFile, telegram_id: int) -> tuple[str, str]:
-    UPLOAD_ROOT.mkdir(parents=True, exist_ok=True)
+async def _save_upload(
+    video: UploadFile,
+    telegram_id: int,
+    upload_dir: Path,
+) -> tuple[str, str, int]:
+    upload_root = upload_dir / "submissions"
+    upload_root.mkdir(parents=True, exist_ok=True)
     filename = f"{int(time.time())}-{telegram_id}-{uuid4().hex}-{_safe_filename(video.filename)}"
-    destination = UPLOAD_ROOT / filename
+    destination = upload_root / filename
 
     size = 0
     try:
@@ -56,8 +59,14 @@ async def _save_upload(video: UploadFile, telegram_id: int) -> tuple[str, str]:
     finally:
         await video.close()
 
+    if not destination.exists():
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Видео не сохранилось на сервере",
+        )
+
     relative_path = Path("submissions") / filename
-    return str(destination), relative_path.as_posix()
+    return str(destination), relative_path.as_posix(), size
 
 
 @router.post(
@@ -107,12 +116,18 @@ async def submit_video(
 
     try:
         if video:
-            file_path, relative_url_path = await _save_upload(video, telegram_user.id)
+            upload_dir = request.app.state.settings.upload_dir
+            file_path, relative_url_path, file_size = await _save_upload(
+                video,
+                telegram_user.id,
+                upload_dir,
+            )
             file_url = str(request.url_for("uploads", path=relative_url_path))
             logger.info(
-                "WEBAPP_VIDEO_FILE_SAVED telegram_id=%s file_path=%s file_url=%s",
+                "SUBMISSION_VIDEO_SAVED telegram_id=%s file_path=%s size=%s video_url=%s",
                 telegram_user.id,
                 file_path,
+                file_size,
                 file_url,
             )
 

@@ -5,7 +5,9 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.config import PROJECT_ROOT, Settings
+import logging
+
+from app.config import Settings
 from app.database import Database
 from app.routers import (
     achievements,
@@ -17,13 +19,19 @@ from app.routers import (
     users,
 )
 
+logger = logging.getLogger("pullup.api")
+
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     app_settings = settings or Settings.from_env()
     database = Database(app_settings.database_dsn)
+    uploads_dir = app_settings.upload_dir
 
     @asynccontextmanager
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
+        uploads_dir.mkdir(parents=True, exist_ok=True)
+        (uploads_dir / "submissions").mkdir(parents=True, exist_ok=True)
+        logger.info("UPLOAD_DIR_CONFIG upload_dir=%s", uploads_dir)
         await database.connect()
         try:
             yield
@@ -37,7 +45,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     application.state.settings = app_settings
     application.state.database = database
-    uploads_dir = PROJECT_ROOT / "uploads"
     uploads_dir.mkdir(parents=True, exist_ok=True)
 
     application.add_middleware(
@@ -61,7 +68,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(auth.router)
     application.include_router(profile.router)
     application.include_router(submissions.router)
-    application.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
+    application.mount("/uploads", StaticFiles(directory=str(uploads_dir)), name="uploads")
     return application
 
 

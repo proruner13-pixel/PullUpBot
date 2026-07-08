@@ -11,10 +11,9 @@ async def list_for_user(
             challenge.slug AS exercise,
             user_challenge.progress,
             challenge.goal,
-            CASE
-                WHEN user_challenge.progress = 0 THEN 0
-                ELSE 1 + (user_challenge.progress / challenge.goal)
-            END::INTEGER AS level
+            user_challenge.xp,
+            user_challenge.level,
+            (user_challenge.xp % 100)::INTEGER AS next_level_progress
         FROM user_challenges AS user_challenge
         JOIN challenges AS challenge
           ON challenge.id = user_challenge.challenge_id

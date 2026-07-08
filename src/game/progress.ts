@@ -9,6 +9,7 @@ export interface Challenge {
     goal: number;
     level: number;
     xp: number;
+    next_level_progress?: number;
     sportScore: number;
     monthlyScore: number;
     totalScore: number;

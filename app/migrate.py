@@ -61,7 +61,11 @@ async def preflight(connection: asyncpg.Connection) -> None:
             "username",
             "display_name",
             "tokens",
+            "xp",
+            "total_xp",
             "weekly_goal",
+            "balance",
+            "level",
             "ref_code",
             "referred_by",
             "referrals_count",
@@ -81,6 +85,7 @@ async def preflight(connection: asyncpg.Connection) -> None:
             "reject_reason",
             "created_at",
             "moderated_at",
+            "rewards_applied",
         },
         "submissions": {
             "id",
@@ -93,12 +98,33 @@ async def preflight(connection: asyncpg.Connection) -> None:
             "moderator_comment",
             "created_at",
             "reviewed_at",
+            "rewards_applied",
+        },
+        "user_challenges": {
+            "id",
+            "user_id",
+            "challenge_id",
+            "progress",
+            "xp",
+            "level",
+            "completed",
+            "completed_at",
+            "created_at",
         },
         "token_transactions": {
             "id",
             "user_id",
             "amount",
             "reason",
+            "source_type",
+            "source_id",
+            "created_at",
+        },
+        "xp_transactions": {
+            "id",
+            "user_id",
+            "challenge_key",
+            "xp_amount",
             "source_type",
             "source_id",
             "created_at",
@@ -151,7 +177,7 @@ async def verify(connection: asyncpg.Connection) -> None:
             "SELECT version FROM public.schema_migrations"
         )
     }
-    missing_versions = {"002", "003", "004"} - applied
+    missing_versions = {"002", "003", "004", "005"} - applied
     if missing_versions:
         raise RuntimeError(
             "Required migrations are not recorded: "
@@ -182,9 +208,20 @@ async def verify(connection: asyncpg.Connection) -> None:
     if not idempotency_index:
         raise RuntimeError("Submission token idempotency index is missing")
 
-    print("Migrations 002, 003, and 004 are applied")
+    xp_index = await connection.fetchval(
+        """
+        SELECT to_regclass(
+            'public.uq_xp_transactions_reward_source'
+        ) IS NOT NULL
+        """
+    )
+    if not xp_index:
+        raise RuntimeError("XP reward idempotency index is missing")
+
+    print("Migrations 002, 003, 004, and 005 are applied")
     print("Submission type constraint is valid")
     print("Submission token idempotency index exists")
+    print("XP reward idempotency index exists")
 
 
 async def migrate_up(connection: asyncpg.Connection) -> None:

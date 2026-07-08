@@ -1,18 +1,20 @@
 import { apiRequest, type ProfileDto } from "./client";
+import { normalizeProfileResponse } from "./auth";
 
-export function getProfile(initData: string): Promise<ProfileDto> {
-    return apiRequest<ProfileDto>(
+export async function getProfile(initData: string): Promise<ProfileDto> {
+    const response = await apiRequest<unknown>(
         "/profile/me",
         { method: "GET" },
         initData
     );
+    return normalizeProfileResponse(response);
 }
 
-export function updateProfileAvatar(
+export async function updateProfileAvatar(
     initData: string,
     avatarUrl: string
 ): Promise<ProfileDto> {
-    return apiRequest<ProfileDto>(
+    const response = await apiRequest<unknown>(
         "/profile/me/avatar",
         {
             method: "PATCH",
@@ -20,4 +22,5 @@ export function updateProfileAvatar(
         },
         initData
     );
+    return normalizeProfileResponse(response);
 }

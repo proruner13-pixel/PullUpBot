@@ -48,6 +48,10 @@ import {
     isTelegramWebViewPossible,
 } from "./utils/telegram";
 import { updateProfileAvatar } from "./api/profile";
+import {
+    getMySubmissions,
+    type SubmissionResponse,
+} from "./api/submissions";
 import AvatarPickerModal from "./components/AvatarPickerModal";
 import SideMenu, {
     type SideMenuAction,
@@ -124,6 +128,31 @@ type ApiHealthStatus =
 const AVATAR_STORAGE_KEY = "pullup:selectedAvatar";
 const CUSTOM_AVATAR_STORAGE_KEY = "pullup:customAvatar";
 const SEEN_ACHIEVEMENTS_KEY = "pullup:seenAchievements";
+const DEMO_WORKOUTS_STORAGE_KEY = "pullup:weeklyWorkouts";
+
+type WorkoutType = "pullup" | "pushup" | "run" | "plank";
+
+interface WorkoutEntry {
+    type: WorkoutType;
+    date: string;
+    tokens: number;
+    xp: number;
+}
+
+interface WorkoutTypeSummary {
+    type: WorkoutType;
+    tokens: number;
+    xp: number;
+}
+
+interface WeeklyWorkoutDay {
+    key: string;
+    date: Date;
+    label: string;
+    tokens: number;
+    xp: number;
+    segments: WorkoutTypeSummary[];
+}
 
 type ToastType =
     | "success"
@@ -142,7 +171,9 @@ function gameChallengesToApi(user: GameUser): ApiChallenge[] {
         exercise: CHALLENGE_TO_EXERCISE[type as ChallengeType],
         progress: challenge.progress,
         goal: challenge.goal,
+        xp: challenge.xp,
         level: challenge.level,
+        next_level_progress: challenge.xp % 100,
     }));
 }
 
@@ -185,6 +216,16 @@ const CHALLENGE_VISUALS: Record<string, ChallengeVisual> = {
     },
 };
 
+const WORKOUT_TYPE_META: Record<
+    WorkoutType,
+    { label: string; color: string }
+> = {
+    pullup: { label: "Подтягивания", color: "#71e45b" },
+    pushup: { label: "Отжимания", color: "#55a8ff" },
+    run: { label: "Бег", color: "#ff9e45" },
+    plank: { label: "Планка", color: "#d86cff" },
+};
+
 const NAV_ITEMS: Array<{
     id: Tab;
     label: string;
@@ -200,6 +241,150 @@ const NAV_ITEMS: Array<{
 function percent(challenge: ApiChallenge): number {
     if (challenge.goal <= 0) return 0;
     return Math.min(100, Math.round((challenge.progress / challenge.goal) * 100));
+}
+
+function levelProgress(xp: number): number {
+    return Math.max(0, xp % 100);
+}
+
+function apiLevelProgress(value: number | undefined, xp: number): number {
+    return value ?? levelProgress(xp);
+}
+
+function toDayKey(date: Date): string {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+}
+
+function formatShortDate(date: Date): string {
+    return `${String(date.getDate()).padStart(2, "0")}.${String(
+        date.getMonth() + 1
+    ).padStart(2, "0")}`;
+}
+
+function formatFullDate(date: Date): string {
+    return `${formatShortDate(date)}.${date.getFullYear()}`;
+}
+
+function normalizeWorkoutType(type: string): WorkoutType | null {
+    const normalized: Record<string, WorkoutType> = {
+        pullup: "pullup",
+        pullups: "pullup",
+        pushup: "pushup",
+        pushups: "pushup",
+        run: "run",
+        running: "run",
+        plank: "plank",
+    };
+    return normalized[type] ?? null;
+}
+
+function calculateWorkoutTokens(type: WorkoutType, value: number): number {
+    const safeValue = Math.max(Number.isFinite(value) ? value : 0, 0);
+    if (type === "run") return Math.floor(safeValue * 10);
+    if (type === "plank") return Math.floor(safeValue / 10);
+    return Math.floor(safeValue);
+}
+
+function calculateWorkoutXp(type: WorkoutType, tokens: number, value: number): number {
+    if (type === "pullup") return tokens * 2;
+    if (type === "pushup") return tokens;
+    if (type === "run") return Math.floor(Math.max(value, 0) * 10);
+    return Math.floor(Math.max(value, 0) / 10);
+}
+
+function submissionToWorkout(submission: SubmissionResponse): WorkoutEntry | null {
+    if (submission.status !== "approved") return null;
+    const type = normalizeWorkoutType(submission.type);
+    if (!type) return null;
+    const tokens = calculateWorkoutTokens(type, submission.value);
+    return {
+        type,
+        date: submission.reviewed_at ?? submission.created_at,
+        tokens,
+        xp: calculateWorkoutXp(type, tokens, submission.value),
+    };
+}
+
+function challengeTypeToWorkoutType(type: ChallengeType): WorkoutType {
+    const map: Record<ChallengeType, WorkoutType> = {
+        подтягивания: "pullup",
+        отжимания: "pushup",
+        планка: "plank",
+        бег: "run",
+    };
+    return map[type];
+}
+
+function readDemoWorkouts(): WorkoutEntry[] {
+    try {
+        const raw = window.localStorage.getItem(DEMO_WORKOUTS_STORAGE_KEY);
+        if (!raw) return [];
+        const parsed = JSON.parse(raw) as unknown;
+        if (!Array.isArray(parsed)) return [];
+        return parsed.filter((item): item is WorkoutEntry => {
+            if (typeof item !== "object" || item === null) return false;
+            const candidate = item as Partial<WorkoutEntry>;
+            return (
+                typeof candidate.date === "string" &&
+                typeof candidate.tokens === "number" &&
+                typeof candidate.xp === "number" &&
+                Boolean(candidate.type && WORKOUT_TYPE_META[candidate.type])
+            );
+        });
+    } catch {
+        return [];
+    }
+}
+
+function buildWeeklyWorkoutDays(workouts: WorkoutEntry[]): WeeklyWorkoutDay[] {
+    const today = new Date();
+    const days = Array.from({ length: 7 }, (_, index) => {
+        const date = new Date(today);
+        date.setHours(0, 0, 0, 0);
+        date.setDate(today.getDate() - (6 - index));
+        return date;
+    });
+
+    const byDay = new Map<string, Map<WorkoutType, WorkoutTypeSummary>>();
+    for (const day of days) {
+        byDay.set(toDayKey(day), new Map<WorkoutType, WorkoutTypeSummary>());
+    }
+
+    for (const workout of workouts) {
+        const date = new Date(workout.date);
+        if (Number.isNaN(date.getTime())) continue;
+        const key = toDayKey(date);
+        const day = byDay.get(key);
+        if (!day) continue;
+        const current =
+            day.get(workout.type) ?? {
+                type: workout.type,
+                tokens: 0,
+                xp: 0,
+            };
+        current.tokens += workout.tokens;
+        current.xp += workout.xp;
+        day.set(workout.type, current);
+    }
+
+    const typeOrder: WorkoutType[] = ["pullup", "pushup", "run", "plank"];
+    return days.map((date) => {
+        const key = toDayKey(date);
+        const segments = typeOrder
+            .map((type) => byDay.get(key)?.get(type))
+            .filter((segment): segment is WorkoutTypeSummary => Boolean(segment));
+        return {
+            key,
+            date,
+            label: formatShortDate(date),
+            tokens: segments.reduce((sum, segment) => sum + segment.tokens, 0),
+            xp: segments.reduce((sum, segment) => sum + segment.xp, 0),
+            segments,
+        };
+    });
 }
 
 function initials(name: string): string {
@@ -333,7 +518,9 @@ function ChallengeCard({
                 </div>
                 <div className="challenge-meta">
                     <span className="text-xs text-muted">{value}% выполнено</span>
-                    <span className="text-xs text-muted">Уровень {challenge.level}</span>
+                    <span className="text-xs text-muted">
+                        Уровень {challenge.level} · {apiLevelProgress(challenge.next_level_progress, challenge.xp)} / 100 XP
+                    </span>
                 </div>
             </div>
         </motion.button>
@@ -484,7 +671,7 @@ function Dashboard({
                 </div>
                 <div>
                     <span>Опыт</span>
-                    <strong>{gameUser.xp.toLocaleString("ru-RU")} XP</strong>
+                    <strong>{user.total_xp.toLocaleString("ru-RU")} XP</strong>
                 </div>
                 <div>
                     <span>Баланс</span>
@@ -610,11 +797,25 @@ function ChallengesScreen({
 
 function WorkoutsScreen({
     challenges,
+    workouts,
     onAdd,
 }: {
     challenges: ApiChallenge[];
+    workouts: WorkoutEntry[];
     onAdd: () => void;
 }) {
+    const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
+    const weeklyDays = useMemo(
+        () => buildWeeklyWorkoutDays(workouts),
+        [workouts]
+    );
+    const maxTokens = Math.max(
+        1,
+        ...weeklyDays.map((day) => day.tokens)
+    );
+    const hasWeekData = weeklyDays.some((day) => day.tokens > 0);
+    const selectedDay = weeklyDays.find((day) => day.key === selectedDayKey);
+
     return (
         <>
             <ScreenHeader title="Тренировки" eyebrow="История прогресса" />
@@ -659,16 +860,124 @@ function WorkoutsScreen({
                     </div>
                     <Activity size={19} />
                 </div>
-                <div className="bars" aria-label="График прогресса">
-                    {[48, 68, 56, 82, 74, 50, 88].map((height, index) => (
-                        <motion.i
-                            key={index}
-                            initial={{ height: 0 }}
-                            animate={{ height: `${height}%` }}
-                            transition={{ delay: index * 0.05 }}
-                        />
-                    ))}
-                </div>
+                {hasWeekData ? (
+                    <div
+                        className="bars workout-dynamics"
+                        aria-label="Динамика тренировок за неделю"
+                    >
+                        {weeklyDays.map((day, index) => {
+                            const height = Math.max(
+                                8,
+                                Math.round((day.tokens / maxTokens) * 100)
+                            );
+                            const isSelected = selectedDayKey === day.key;
+                            return (
+                                <div className="dynamic-day" key={day.key}>
+                                    <span className="dynamic-day-total">
+                                        {day.tokens > 0 ? `+${day.tokens}` : ""}
+                                    </span>
+                                    <button
+                                        type="button"
+                                        className={
+                                            isSelected
+                                                ? "dynamic-bar active"
+                                                : "dynamic-bar"
+                                        }
+                                        style={
+                                            {
+                                                "--bar-height": `${height}%`,
+                                            } as React.CSSProperties
+                                        }
+                                        onClick={() =>
+                                            setSelectedDayKey((current) =>
+                                                current === day.key
+                                                    ? null
+                                                    : day.key
+                                            )
+                                        }
+                                        disabled={day.tokens === 0}
+                                        aria-label={`${day.label}: ${day.tokens} токенов`}
+                                    >
+                                        <motion.span
+                                            className="dynamic-bar-stack"
+                                            initial={{ height: 0 }}
+                                            animate={{
+                                                height:
+                                                    day.tokens > 0
+                                                        ? "var(--bar-height)"
+                                                        : "8%",
+                                            }}
+                                            transition={{ delay: index * 0.04 }}
+                                        >
+                                            {day.segments.map((segment) => (
+                                                <i
+                                                    key={segment.type}
+                                                    style={
+                                                        {
+                                                            "--segment-color":
+                                                                WORKOUT_TYPE_META[
+                                                                    segment.type
+                                                                ].color,
+                                                            "--segment-share": `${Math.max(
+                                                                8,
+                                                                (segment.tokens /
+                                                                    day.tokens) *
+                                                                    100
+                                                            )}%`,
+                                                        } as React.CSSProperties
+                                                    }
+                                                />
+                                            ))}
+                                        </motion.span>
+                                    </button>
+                                    <time>{day.label}</time>
+                                </div>
+                            );
+                        })}
+                        <AnimatePresence>
+                            {selectedDay && selectedDay.tokens > 0 && (
+                                <motion.div
+                                    className="dynamic-tooltip"
+                                    initial={{ opacity: 0, y: 8, scale: 0.96 }}
+                                    animate={{ opacity: 1, y: 0, scale: 1 }}
+                                    exit={{ opacity: 0, y: 6, scale: 0.96 }}
+                                >
+                                    <strong>{formatFullDate(selectedDay.date)}</strong>
+                                    {selectedDay.segments.map((segment) => (
+                                        <div key={segment.type}>
+                                            <span
+                                                style={{
+                                                    color: WORKOUT_TYPE_META[
+                                                        segment.type
+                                                    ].color,
+                                                }}
+                                            >
+                                                {
+                                                    WORKOUT_TYPE_META[
+                                                        segment.type
+                                                    ].label
+                                                }
+                                            </span>
+                                            <b>
+                                                +{segment.tokens} ток. · +
+                                                {segment.xp} XP
+                                            </b>
+                                        </div>
+                                    ))}
+                                    <small>
+                                        Итого: +{selectedDay.tokens} токенов · +
+                                        {selectedDay.xp} XP
+                                    </small>
+                                </motion.div>
+                            )}
+                        </AnimatePresence>
+                    </div>
+                ) : (
+                    <div className="weekly-empty-state">
+                        <Activity size={24} />
+                        <strong>Пока нет тренировок за неделю</strong>
+                    </div>
+                )}
             </section>
         </>
     );
@@ -728,24 +1037,31 @@ function ProfileScreen({
                         style={{
                             width: `${Math.min(
                                 100,
-                                ((gameUser.xp % 1000) / 1000) * 100
+                                apiLevelProgress(
+                                    user.next_level_progress,
+                                    user.total_xp
+                                )
                             )}%`,
                         }}
                     />
                 </div>
                 <small>
-                    Общий уровень {gameUser.totalLevel} · до XP-цели{" "}
-                    {1000 - (gameUser.xp % 1000)} XP
+                    Общий уровень {user.level} · до следующего уровня{" "}
+                    {100 -
+                        apiLevelProgress(
+                            user.next_level_progress,
+                            user.total_xp
+                        )} XP
                 </small>
             </section>
             <div className="profile-stats">
                 <div>
                     <span>Токены</span>
-                    <strong>🪙 {user.tokens}</strong>
+                    <strong>🪙 {user.balance}</strong>
                 </div>
                 <div>
                     <span>Опыт</span>
-                    <strong>{gameUser.xp} XP</strong>
+                    <strong>{user.total_xp} XP</strong>
                 </div>
             </div>
             <section className="panel profile-achievements">
@@ -852,6 +1168,10 @@ function ChallengeDetailModal({
                     <div>
                         <span>Уровень</span>
                         <strong>{challenge.level}</strong>
+                    </div>
+                    <div>
+                        <span>XP</span>
+                        <strong>{challenge.xp}</strong>
                     </div>
                     <div>
                         <span>Награда</span>
@@ -1106,6 +1426,8 @@ export default function App() {
     const [activeView, setActiveView] = useState<AppView>("home");
     const [user, setUser] = useState<ApiUser | null>(null);
     const [gameUser, setGameUser] = useState<GameUser>(loadUser);
+    const [weeklyWorkouts, setWeeklyWorkouts] =
+        useState<WorkoutEntry[]>(readDemoWorkouts);
     const [apiChallenges, setApiChallenges] = useState<ApiChallenge[]>([]);
     const [achievements, setAchievements] = useState<ApiAchievement[]>([]);
     const [dashboardMode, setDashboardMode] = useState<DashboardMode>(() =>
@@ -1169,6 +1491,7 @@ export default function App() {
         let active = true;
         const load = async () => {
             try {
+                const loadedWorkouts: WorkoutEntry[] = [];
                 const telegram = await getTelegramWebAppData();
                 if (!active) return;
 
@@ -1231,10 +1554,38 @@ export default function App() {
                 setAchievements(data.achievements);
                 setDashboardMode(data.mode);
                 if (data.mode === "telegram") {
+                    if (telegram.initData) {
+                        try {
+                            const submissions = await getMySubmissions(
+                                100,
+                                0,
+                                telegram.initData
+                            );
+                            loadedWorkouts.push(
+                                ...submissions
+                                    .map(submissionToWorkout)
+                                    .filter(
+                                        (
+                                            workout
+                                        ): workout is WorkoutEntry =>
+                                            Boolean(workout)
+                                    )
+                            );
+                        } catch (workoutReason) {
+                            if (import.meta.env.DEV) {
+                                console.warn(
+                                    "[DEV] /submissions history failed:",
+                                    workoutReason
+                                );
+                            }
+                        }
+                    }
+                    setWeeklyWorkouts(loadedWorkouts);
                     setBackendProfile(data.user);
                     setProfileSource("backend");
                     setAuthStatus("authenticated");
                 } else {
+                    setWeeklyWorkouts(readDemoWorkouts());
                     setBackendProfile(null);
                     setProfileSource((currentSource) => {
                         if (
@@ -1280,12 +1631,14 @@ export default function App() {
                     setApiChallenges(demo.challenges);
                     setAchievements(demo.achievements);
                     setDashboardMode(reason.mode);
+                    setWeeklyWorkouts(readDemoWorkouts());
                 } else {
                     setUser(null);
                     setBackendProfile(null);
                     setProfileSource("none");
                     setAuthStatus("backend-error");
                     setDashboardMode("api-error");
+                    setWeeklyWorkouts(readDemoWorkouts());
                     // fallback
                     const demo = createDemoDashboard(undefined, "api-error");
                     setApiChallenges(demo.challenges);
@@ -1325,13 +1678,17 @@ export default function App() {
                 JSON.stringify(gameUser)
             );
             window.localStorage.setItem(
+                DEMO_WORKOUTS_STORAGE_KEY,
+                JSON.stringify(weeklyWorkouts)
+            );
+            window.localStorage.setItem(
                 DEMO_DATA_VERSION_KEY,
                 DEMO_DATA_VERSION
             );
         } catch {
             // Progress remains available for the current session.
         }
-    }, [dashboardMode, gameUser]);
+    }, [dashboardMode, gameUser, weeklyWorkouts]);
 
     useEffect(() => {
         if (!notification) return;
@@ -1389,6 +1746,8 @@ export default function App() {
                 progress: challenge.progress,
                 goal: challenge.goal,
                 level: challenge.level,
+                xp: challenge.xp,
+                next_level_progress: challenge.next_level_progress,
                 totalScore: challenge.progress,
                 sportScore: challenge.progress,
                 monthlyScore: challenge.progress,
@@ -1400,6 +1759,7 @@ export default function App() {
             name: user.display_name,
             avatarUrl: user.photo_url ?? undefined,
             tokens: user.tokens,
+            xp: user.total_xp,
             totalLevel: user.level,
             streakDays: user.streak_days,
             achievements: achievements.map(
@@ -1638,6 +1998,16 @@ export default function App() {
                 });
             }
 
+            setWeeklyWorkouts((currentWorkouts) => [
+                ...currentWorkouts,
+                {
+                    type: challengeTypeToWorkoutType(type),
+                    date: new Date().toISOString(),
+                    tokens: result.earnedTokens,
+                    xp: result.earnedXp,
+                },
+            ]);
+
             return result.updatedUser;
         });
     };
@@ -1650,6 +2020,7 @@ export default function App() {
             // Reset the in-memory state even when storage is unavailable.
         }
         setGameUser(cloneInitialUser());
+        setWeeklyWorkouts([]);
         setNotification({
             type: "info",
             text: "Демо-прогресс сброшен",
@@ -1677,6 +2048,7 @@ export default function App() {
         setNewlyUnlockedCodes([]);
         setAppSettings(DEFAULT_APP_SETTINGS);
         setGameUser(cloneInitialUser());
+        setWeeklyWorkouts([]);
     };
 
     const showAvatarSaved = () => {
@@ -1782,6 +2154,7 @@ export default function App() {
                 return (
                     <WorkoutsScreen
                         challenges={challenges}
+                        workouts={weeklyWorkouts}
                         onAdd={() => setShowWorkoutModal(true)}
                     />
                 );
@@ -1850,6 +2223,7 @@ export default function App() {
         placeholder.description,
         placeholder.title,
         viewGameUser,
+        weeklyWorkouts,
         handleOpenSite,
     ]);
 

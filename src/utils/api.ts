@@ -21,7 +21,10 @@ export interface ApiUser {
     last_name: string | null;
     photo_url: string | null;
     tokens: number;
+    balance: number;
+    total_xp: number;
     level: number;
+    next_level_progress: number;
     streak_days: number;
     referrals_count: number;
 }
@@ -30,7 +33,9 @@ export interface ApiChallenge {
     exercise: string;
     progress: number;
     goal: number;
+    xp: number;
     level: number;
+    next_level_progress: number;
 }
 
 export interface ApiAchievement {
@@ -100,7 +105,10 @@ function profileToApiUser(profile: ProfileDto): ApiUser {
         last_name: profile.last_name,
         photo_url: profile.avatar_url,
         tokens: profile.tokens,
+        balance: profile.balance,
+        total_xp: profile.xp,
         level: profile.level,
+        next_level_progress: profile.next_level_progress,
         streak_days: profile.streak_days,
         referrals_count: 0,
     };
@@ -123,7 +131,10 @@ function telegramUserToApiUser(
         last_name: telegramUser.last_name ?? null,
         photo_url: telegramUser.photo_url ?? null,
         tokens: 0,
+        balance: 0,
+        total_xp: 0,
         level: 1,
+        next_level_progress: 0,
         streak_days: 0,
         referrals_count: 0,
     };
