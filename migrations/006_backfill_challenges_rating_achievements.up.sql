@@ -46,7 +46,7 @@ approved_submissions AS (
 activity_totals AS (
     SELECT app_user.telegram_id, 'pullups' AS slug,
            COALESCE(approved_pullups.reps, 0) + COALESCE(approved_submissions.pullups, 0) AS progress,
-           ((COALESCE(approved_pullups.reps, 0) + COALESCE(approved_submissions.pullups, 0)) * 2) AS xp
+           ((COALESCE(approved_pullups.reps, 0) + COALESCE(approved_submissions.pullups, 0)) * 5) AS xp
     FROM public.users AS app_user
     LEFT JOIN approved_pullups ON approved_pullups.internal_user_id = app_user.id
     LEFT JOIN approved_submissions ON approved_submissions.telegram_id = app_user.telegram_id
@@ -55,7 +55,7 @@ activity_totals AS (
     UNION ALL
     SELECT telegram_id, 'running', running_km, running_km * 10 FROM approved_submissions
     UNION ALL
-    SELECT telegram_id, 'plank', plank_seconds, FLOOR(plank_seconds / 10)::INTEGER FROM approved_submissions
+    SELECT telegram_id, 'plank', plank_seconds, FLOOR(plank_seconds / 6)::INTEGER FROM approved_submissions
 )
 INSERT INTO public.user_challenges (
     user_id,
@@ -71,7 +71,7 @@ SELECT
     challenge.id,
     GREATEST(activity_totals.progress, 0),
     GREATEST(activity_totals.xp, 0),
-    (GREATEST(activity_totals.xp, 0) / 100) + 1,
+    (GREATEST(activity_totals.xp, 0) / 1000) + 1,
     GREATEST(activity_totals.progress, 0) >= challenge.goal,
     CASE WHEN GREATEST(activity_totals.progress, 0) >= challenge.goal THEN NOW() ELSE NULL END
 FROM activity_totals
@@ -81,7 +81,7 @@ WHERE activity_totals.progress > 0 OR activity_totals.xp > 0
 ON CONFLICT (user_id, challenge_id) DO UPDATE
 SET progress = GREATEST(public.user_challenges.progress, EXCLUDED.progress),
     xp = GREATEST(public.user_challenges.xp, EXCLUDED.xp),
-    level = (GREATEST(public.user_challenges.xp, EXCLUDED.xp) / 100) + 1,
+    level = (GREATEST(public.user_challenges.xp, EXCLUDED.xp) / 1000) + 1,
     completed = public.user_challenges.completed OR EXCLUDED.completed,
     completed_at = COALESCE(public.user_challenges.completed_at, EXCLUDED.completed_at);
 
