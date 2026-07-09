@@ -85,6 +85,8 @@ def calculate_xp(
     tokens_earned: int,
     payload: Mapping[str, Any] | None = None,
 ) -> int:
+    if payload is not None and not tokens_earned:
+        tokens_earned = calculate_pullup_reward(activity_type, payload)
     return calculate_xp_reward(activity_type, tokens_earned, payload)
 
 

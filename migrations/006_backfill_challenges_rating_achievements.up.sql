@@ -37,7 +37,7 @@ approved_submissions AS (
         submission.user_id AS telegram_id,
         COALESCE(SUM(CASE WHEN submission.type = 'pullups' THEN submission.value ELSE 0 END), 0)::INTEGER AS pullups,
         COALESCE(SUM(CASE WHEN submission.type = 'pushups' THEN submission.value ELSE 0 END), 0)::INTEGER AS pushups,
-        COALESCE(SUM(CASE WHEN submission.type = 'running' THEN submission.value ELSE 0 END), 0)::INTEGER AS running_km,
+        COALESCE(SUM(CASE WHEN submission.type = 'running' THEN submission.value ELSE 0 END), 0) AS running_km,
         COALESCE(SUM(CASE WHEN submission.type = 'plank' THEN submission.value ELSE 0 END), 0)::INTEGER AS plank_seconds
     FROM public.submissions AS submission
     WHERE submission.status = 'approved'
@@ -53,7 +53,7 @@ activity_totals AS (
     UNION ALL
     SELECT telegram_id, 'pushups', pushups, pushups FROM approved_submissions
     UNION ALL
-    SELECT telegram_id, 'running', running_km, running_km * 10 FROM approved_submissions
+    SELECT telegram_id, 'running', FLOOR(running_km)::INTEGER, FLOOR(running_km * 10)::INTEGER FROM approved_submissions
     UNION ALL
     SELECT telegram_id, 'plank', plank_seconds, FLOOR(plank_seconds / 6)::INTEGER FROM approved_submissions
 )

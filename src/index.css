@@ -612,14 +612,21 @@ a {
 }
 
 .recent-workout-list strong,
-.recent-workout-list span {
+.recent-workout-list span,
+.recent-workout-list small {
   display: block;
 }
 
-.recent-workout-list span {
+.recent-workout-list span,
+.recent-workout-list small {
   margin-top: 5px;
   color: #b8c2bc;
   font-size: 12px;
+}
+
+.recent-workout-list small {
+  color: #7f8983;
+  font-size: 10px;
 }
 
 .recent-workout-list b {
@@ -630,6 +637,20 @@ a {
   border-radius: 999px;
   font-size: 12px;
   white-space: nowrap;
+}
+
+.recent-workout-list b.pending,
+.workout-status.pending {
+  color: #f2bf57;
+  background: rgba(242,191,87,.08);
+  border-color: rgba(242,191,87,.22);
+}
+
+.recent-workout-list b.rejected,
+.workout-status.rejected {
+  color: #e98b84;
+  background: rgba(226,109,102,.08);
+  border-color: rgba(226,109,102,.22);
 }
 
 .home-empty-recent {
@@ -2204,7 +2225,7 @@ a {
 .amount-field > div {
   height: 58px;
   display: grid;
-  grid-template-columns: 60px 1fr 60px;
+  grid-template-columns: 52px minmax(0, 1fr) 46px 52px;
   place-items: center;
   background: var(--panel);
   border: 1px solid var(--border);
@@ -2217,8 +2238,22 @@ a {
   font-size: 23px;
 }
 
-.amount-field strong {
+.amount-field input {
+  width: 100%;
+  min-width: 0;
+  color: #f7fbf7;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  text-align: center;
+  font: inherit;
   font-size: 19px;
+  font-weight: 800;
+}
+
+.amount-field small {
+  color: var(--muted);
+  font-size: 11px;
 }
 
 .date-field {

@@ -88,6 +88,14 @@ import {
     type ChallengeType,
     type User as GameUser,
 } from "./game/progress";
+import {
+    LEVEL_XP_STEP,
+    calculateLevel,
+    calculateProgress,
+    calculatePullupReward,
+    calculateXp,
+    normalizeEconomyActivity,
+} from "./game/economy";
 import { createDemoDashboard } from "./mocks/data";
 import {
     resetDemoProgress as resetStoredDemoProgress,
@@ -141,8 +149,10 @@ type WorkoutType = "pullup" | "pushup" | "run" | "plank";
 interface WorkoutEntry {
     type: WorkoutType;
     date: string;
+    value: number;
     tokens: number;
     xp: number;
+    status: "pending" | "approved" | "rejected";
 }
 
 interface WorkoutTypeSummary {
@@ -179,7 +189,7 @@ function gameChallengesToApi(user: GameUser): ApiChallenge[] {
         goal: challenge.goal,
         xp: challenge.xp,
         level: challenge.level,
-        next_level_progress: challenge.xp % 100,
+        next_level_progress: challenge.xp % LEVEL_XP_STEP,
     }));
 }
 
@@ -250,7 +260,7 @@ function percent(challenge: ApiChallenge): number {
 }
 
 function levelProgress(xp: number): number {
-    return Math.max(0, xp % 100);
+    return Math.max(0, xp % LEVEL_XP_STEP);
 }
 
 function apiLevelProgress(value: number | undefined, xp: number): number {
@@ -292,6 +302,23 @@ function formatCompactDuration(totalSeconds: number): string {
 
 function formatDistance(value: number): string {
     return `${Math.max(0, value).toLocaleString("ru-RU")} км`;
+}
+
+function formatWorkoutValue(type: WorkoutType, value: number): string {
+    const safeValue = Math.max(Number.isFinite(value) ? value : 0, 0);
+    if (type === "run") {
+        return `${safeValue.toLocaleString("ru-RU")} км`;
+    }
+    if (type === "plank") {
+        return formatCompactDuration(safeValue);
+    }
+    return `${Math.floor(safeValue).toLocaleString("ru-RU")} раз`;
+}
+
+function workoutStatusLabel(status: WorkoutEntry["status"]): string {
+    if (status === "approved") return "Одобрено";
+    if (status === "rejected") return "Отклонено";
+    return "На проверке";
 }
 
 function userGreetingName(user: ApiUser | null): string {
@@ -348,29 +375,24 @@ function normalizeWorkoutType(type: string): WorkoutType | null {
 }
 
 function calculateWorkoutTokens(type: WorkoutType, value: number): number {
-    const safeValue = Math.max(Number.isFinite(value) ? value : 0, 0);
-    if (type === "run") return Math.floor(safeValue * 10);
-    if (type === "plank") return Math.floor(safeValue / 10);
-    return Math.floor(safeValue);
+    return calculatePullupReward(normalizeEconomyActivity(type), value);
 }
 
-function calculateWorkoutXp(type: WorkoutType, tokens: number, value: number): number {
-    if (type === "pullup") return tokens * 2;
-    if (type === "pushup") return tokens;
-    if (type === "run") return Math.floor(Math.max(value, 0) * 10);
-    return Math.floor(Math.max(value, 0) / 10);
+function calculateWorkoutXp(tokens: number): number {
+    return calculateXp(tokens);
 }
 
 function submissionToWorkout(submission: SubmissionResponse): WorkoutEntry | null {
-    if (submission.status !== "approved") return null;
     const type = normalizeWorkoutType(submission.type);
     if (!type) return null;
     const tokens = calculateWorkoutTokens(type, submission.value);
     return {
         type,
         date: submission.reviewed_at ?? submission.created_at,
+        value: submission.value,
         tokens,
-        xp: calculateWorkoutXp(type, tokens, submission.value),
+        xp: calculateWorkoutXp(tokens),
+        status: submission.status,
     };
 }
 
@@ -395,11 +417,19 @@ function readDemoWorkouts(): WorkoutEntry[] {
             const candidate = item as Partial<WorkoutEntry>;
             return (
                 typeof candidate.date === "string" &&
+                typeof candidate.value === "number" &&
                 typeof candidate.tokens === "number" &&
                 typeof candidate.xp === "number" &&
+                (candidate.status === "pending" ||
+                    candidate.status === "approved" ||
+                    candidate.status === "rejected" ||
+                    candidate.status === undefined) &&
                 Boolean(candidate.type && WORKOUT_TYPE_META[candidate.type])
             );
-        });
+        }).map((item) => ({
+            ...item,
+            status: item.status ?? "approved",
+        }));
     } catch {
         return [];
     }
@@ -420,6 +450,7 @@ function buildWeeklyWorkoutDays(workouts: WorkoutEntry[]): WeeklyWorkoutDay[] {
     }
 
     for (const workout of workouts) {
+        if (workout.status !== "approved") continue;
         const date = new Date(workout.date);
         if (Number.isNaN(date.getTime())) continue;
         const key = toDayKey(date);
@@ -585,7 +616,7 @@ function ChallengeCard({
                 <div className="challenge-meta">
                     <span className="text-xs text-muted">{value}% выполнено</span>
                     <span className="text-xs text-muted">
-                        Уровень {challenge.level} · {apiLevelProgress(challenge.next_level_progress, challenge.xp)} / 100 XP
+                        Уровень {challenge.level} · {apiLevelProgress(challenge.next_level_progress, challenge.xp)} / {LEVEL_XP_STEP} XP
                     </span>
                 </div>
             </div>
@@ -675,10 +706,7 @@ function Dashboard({
         user.username ||
         "Атлет";
     const currentXp = Math.max(user.total_xp, 0);
-    const levelBaseXp = Math.max(user.level - 1, 0) * 100;
-    const levelXp = Math.max(currentXp - levelBaseXp, 0);
-    const levelProgressPercent = Math.min(100, levelXp);
-    const xpToNext = Math.max(100 - levelXp, 0);
+    const levelState = calculateProgress(currentXp);
     const stats = {
         pullups:
             challenges.find((challenge) => challenge.exercise === "pullups")
@@ -728,19 +756,22 @@ function Dashboard({
                     aria-label="Сменить аватар"
                 >
                     <img src={avatarUrl} alt="" />
-                    <span className="home-level-badge">{user.level}</span>
+                    <span className="home-level-badge">{levelState.level}</span>
                 </button>
                 <div className="home-profile-main">
                     <h1>Привет, {firstName}! 👋</h1>
-                    <span>Уровень {user.level} · Атлет</span>
+                    <span>Уровень {levelState.level} · Атлет</span>
                     <div className="home-xp-line">
                         <strong>{currentXp.toLocaleString("ru-RU")}</strong>
-                        <span>/ {(levelBaseXp + 100).toLocaleString("ru-RU")} XP</span>
+                        <span>/ {levelState.nextLevelXp.toLocaleString("ru-RU")} XP</span>
                     </div>
                     <div className="home-xp-progress">
-                        <div style={{ width: `${levelProgressPercent}%` }} />
+                        <div style={{ width: `${levelState.progressPercent}%` }} />
                     </div>
-                    <small>До уровня {user.level + 1} осталось {xpToNext} XP</small>
+                    <small>
+                        До уровня {levelState.level + 1} осталось{" "}
+                        {levelState.xpToNextLevel.toLocaleString("ru-RU")} XP
+                    </small>
                 </div>
                 <div className="home-trophy">
                     <Trophy size={44} />
@@ -891,11 +922,16 @@ function Dashboard({
                                     <div>
                                         <strong>{meta.label}</strong>
                                         <span>
-                                            +{workout.tokens} PULLUP ·{" "}
-                                            {formatRelativeWorkoutDate(workout.date)}
+                                            {formatWorkoutValue(workout.type, workout.value)} ·{" "}
+                                            +{workout.tokens} PULLUP · +{workout.xp} XP
                                         </span>
+                                        <small>
+                                            {formatRelativeWorkoutDate(workout.date)}
+                                        </small>
                                     </div>
-                                    <b>Одобрено</b>
+                                    <b className={`workout-status ${workout.status}`}>
+                                        {workoutStatusLabel(workout.status)}
+                                    </b>
                                 </article>
                             );
                         })}
@@ -990,7 +1026,6 @@ function WorkoutsScreen({
             <ScreenHeader title="Тренировки" eyebrow="История прогресса" />
             <div className="workout-list">
                 {challenges
-                    .filter((challenge) => challenge.progress > 0)
                     .map((challenge, index) => {
                         const visual =
                             CHALLENGE_VISUALS[challenge.exercise] ??
@@ -1188,12 +1223,10 @@ function ProfileScreen({
         user.first_name ||
         user.username ||
         `Telegram ${user.telegram_id}`;
-    const title = athleteTitle(user.level);
-    const progress = Math.min(
-        100,
-        apiLevelProgress(user.next_level_progress, user.total_xp)
-    );
-    const xpToNext = Math.max(0, 100 - progress);
+    const levelState = calculateProgress(user.total_xp);
+    const title = athleteTitle(levelState.level);
+    const progress = levelState.progressPercent;
+    const xpToNext = levelState.xpToNextLevel;
     const pullups = profileChallengeValue(challenges, "pullups");
     const pushups = profileChallengeValue(challenges, "pushups");
     const plankSeconds = profileChallengeValue(challenges, "plank");
@@ -1267,10 +1300,10 @@ function ProfileScreen({
     ];
     const frameCards = [
         { label: "Базовая", unlocked: true, accent: "#71e45b" },
-        { label: "Атлет", unlocked: user.level >= 5, accent: "#d86cff" },
-        { label: "Мастер", unlocked: user.level >= 10, accent: "#ffd84f" },
-        { label: "Чемпион", unlocked: user.level >= 15, accent: "#ff6f55" },
-        { label: "Легенда", unlocked: user.level >= 20, accent: "#55d7ff" },
+        { label: "Атлет", unlocked: levelState.level >= 5, accent: "#d86cff" },
+        { label: "Мастер", unlocked: levelState.level >= 10, accent: "#ffd84f" },
+        { label: "Чемпион", unlocked: levelState.level >= 15, accent: "#ff6f55" },
+        { label: "Легенда", unlocked: levelState.level >= 20, accent: "#55d7ff" },
     ];
 
     const copyReferral = async () => {
@@ -1297,13 +1330,14 @@ function ProfileScreen({
                     <span>
                         <ShieldCheck size={14} /> {title}
                     </span>
-                    <strong>Уровень {user.level}</strong>
+                    <strong>Уровень {levelState.level}</strong>
                     <div className="level-line profile-level-line">
                         <div style={{ width: `${progress}%` }} />
                     </div>
                     <small>
                         {user.total_xp.toLocaleString("ru-RU")} XP · до уровня{" "}
-                        {user.level + 1} осталось {xpToNext} XP
+                        {levelState.level + 1} осталось{" "}
+                        {xpToNext.toLocaleString("ru-RU")} XP
                     </small>
                 </div>
                 <button
@@ -1667,6 +1701,13 @@ function AddWorkoutModal({
     const [videoFile, setVideoFile] = useState<File | null>(null);
     const [isLoading, setIsLoading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
+    const amountStep = selected === "running" ? 0.1 : selected === "plank" ? 30 : 1;
+    const amountUnit =
+        selected === "running"
+            ? "км"
+            : selected === "plank"
+              ? "сек"
+              : "раз";
 
     const save = async () => {
         const challengeType = EXERCISE_TO_CHALLENGE[selected];
@@ -1794,11 +1835,39 @@ function AddWorkoutModal({
                 <label className="amount-field">
                     <span>Количество</span>
                     <div>
-                        <button onClick={() => setAmount(Math.max(1, amount - 5))}>
+                        <button
+                            type="button"
+                            onClick={() =>
+                                setAmount(
+                                    Math.max(
+                                        amountStep,
+                                        Number((amount - amountStep).toFixed(1))
+                                    )
+                                )
+                            }
+                        >
                             −
                         </button>
-                        <strong>{amount}</strong>
-                        <button onClick={() => setAmount(amount + 5)}>+</button>
+                        <input
+                            type="number"
+                            min={amountStep}
+                            step={amountStep}
+                            value={amount}
+                            onChange={(event) =>
+                                setAmount(Number(event.target.value))
+                            }
+                            disabled={isLoading}
+                            aria-label="Количество"
+                        />
+                        <small>{amountUnit}</small>
+                        <button
+                            type="button"
+                            onClick={() =>
+                                setAmount(Number((amount + amountStep).toFixed(1)))
+                            }
+                        >
+                            +
+                        </button>
                     </div>
                 </label>
                 <label className="date-field">
@@ -2505,7 +2574,6 @@ export default function App() {
         setSelectedChallenge(null);
         setGameUser((currentUser) => {
             const result = addResultToUser(currentUser, type, value);
-            const challenge = result.updatedUser.challenges[type];
 
             if (
                 result.newAchievements.length &&
@@ -2514,15 +2582,17 @@ export default function App() {
                 playAchievement();
                 setNotification({
                     type: "achievement",
-                    text: `🏆 Новая ачивка: ${result.newAchievements
+                    text: `Новая ачивка: ${result.newAchievements
                         .map((achievement) => achievement.title)
-                        .join(", ")} · 🎉 ${type} — уровень ${challenge.level}`,
+                        .join(", ")} · новый уровень ${calculateLevel(
+                        result.updatedUser.xp
+                    )}`,
                 });
             } else if (result.newAchievements.length) {
                 playAchievement();
                 setNotification({
                     type: "achievement",
-                    text: `🏆 Новая ачивка: ${result.newAchievements
+                    text: `Новая ачивка: ${result.newAchievements
                         .map((achievement) => achievement.title)
                         .join(", ")}`,
                 });
@@ -2530,15 +2600,15 @@ export default function App() {
                 playToken();
                 setNotification({
                     type: "success",
-                    text: `🎉 Новый уровень! ${type[0].toUpperCase()}${type.slice(
-                        1
-                    )} теперь уровень ${challenge.level}`,
+                    text: `Новый уровень! Теперь уровень ${calculateLevel(
+                        result.updatedUser.xp
+                    )}`,
                 });
             } else {
                 playToken();
                 setNotification({
                     type: "token",
-                    text: `+${result.earnedTokens} PULLUP · +${result.earnedXp} XP · +${result.earnedScore} очков`,
+                    text: `+${result.earnedTokens} PULLUP · +${result.earnedXp} XP`,
                 });
             }
 
@@ -2547,8 +2617,10 @@ export default function App() {
                 {
                     type: challengeTypeToWorkoutType(type),
                     date: new Date().toISOString(),
+                    value,
                     tokens: result.earnedTokens,
                     xp: result.earnedXp,
+                    status: "approved",
                 },
             ]);
 

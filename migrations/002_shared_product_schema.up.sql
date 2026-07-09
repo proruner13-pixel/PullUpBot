@@ -137,7 +137,7 @@ CREATE TABLE IF NOT EXISTS public.submissions (
     user_id BIGINT NOT NULL
         REFERENCES public.users(telegram_id) ON DELETE CASCADE,
     type TEXT NOT NULL,
-    value INTEGER NOT NULL DEFAULT 0 CHECK (value >= 0),
+    value NUMERIC(12, 3) NOT NULL DEFAULT 0 CHECK (value >= 0),
     video_file_id TEXT,
     video_url TEXT,
     status TEXT NOT NULL DEFAULT 'pending'

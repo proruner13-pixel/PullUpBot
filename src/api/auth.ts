@@ -1,4 +1,5 @@
 import { apiRequest, type ProfileDto } from "./client";
+import { LEVEL_XP_STEP, calculateLevel } from "../game/economy";
 
 type UnknownRecord = Record<string, unknown>;
 
@@ -59,10 +60,10 @@ export function normalizeProfileResponse(payload: unknown): ProfileDto {
         tokens: numberValue(profile.tokens, 0),
         xp,
         total_xp: xp,
-        level: numberValue(profile.level, 1),
+        level: numberValue(profile.level, calculateLevel(xp)),
         next_level_progress: numberValue(
             profile.next_level_progress,
-            xp % 100
+            xp % LEVEL_XP_STEP
         ),
         streak_days: numberValue(profile.streak_days, 0),
         ref_code: nullableString(profile.ref_code),

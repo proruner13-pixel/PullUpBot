@@ -1,3 +1,10 @@
+import {
+    CHALLENGE_TO_ACTIVITY,
+    calculateLevel,
+    calculatePullupReward,
+    calculateXp,
+} from "./economy";
+
 export type ChallengeType =
     | "подтягивания"
     | "отжимания"
@@ -27,12 +34,6 @@ export interface User {
     challenges: Record<ChallengeType, Challenge>;
 }
 
-export interface SportRule {
-    scoreMultiplier: number;
-    xpMultiplier: number;
-    tokenMultiplier: number;
-}
-
 export interface Achievement {
     id: string;
     title: string;
@@ -53,29 +54,6 @@ export interface AddResultOutcome {
 export const USER_STORAGE_KEY = "pullup_user";
 export const DEMO_DATA_VERSION_KEY = "pullup_demo_version";
 export const DEMO_DATA_VERSION = "clean-v1";
-
-export const SPORT_RULES: Record<ChallengeType, SportRule> = {
-    подтягивания: {
-        scoreMultiplier: 10,
-        xpMultiplier: 10,
-        tokenMultiplier: 2,
-    },
-    отжимания: {
-        scoreMultiplier: 3,
-        xpMultiplier: 4,
-        tokenMultiplier: 1,
-    },
-    планка: {
-        scoreMultiplier: 20,
-        xpMultiplier: 25,
-        tokenMultiplier: 5,
-    },
-    бег: {
-        scoreMultiplier: 15,
-        xpMultiplier: 15,
-        tokenMultiplier: 3,
-    },
-};
 
 export const initialUser: User = {
     name: "Athlete",
@@ -296,10 +274,10 @@ export function addResultToUser(
     type: ChallengeType,
     value: number
 ): AddResultOutcome {
-    const rules = SPORT_RULES[type];
-    const earnedScore = value * rules.scoreMultiplier;
-    const earnedXp = value * rules.xpMultiplier;
-    const earnedTokens = Math.floor(value * rules.tokenMultiplier);
+    const activity = CHALLENGE_TO_ACTIVITY[type];
+    const earnedTokens = calculatePullupReward(activity, value);
+    const earnedXp = calculateXp(earnedTokens);
+    const earnedScore = earnedTokens;
     const challenge = {
         ...user.challenges[type],
         progress: user.challenges[type].progress + value,
@@ -309,7 +287,7 @@ export function addResultToUser(
         xp: user.challenges[type].xp + earnedXp,
         bestResult: Math.max(user.challenges[type].bestResult, value),
     };
-    const previousLevel = challenge.level;
+    const previousTotalLevel = user.totalLevel;
 
     while (challenge.progress >= challenge.goal) {
         challenge.progress -= challenge.goal;
@@ -326,10 +304,7 @@ export function addResultToUser(
         xp: user.xp + earnedXp,
         tokens: user.tokens + earnedTokens,
         challenges,
-        totalLevel: Object.values(challenges).reduce(
-            (sum, item) => sum + item.level,
-            0
-        ) || 1,
+        totalLevel: calculateLevel(user.xp + earnedXp),
     };
     const achievementResult = checkAchievements(withResult);
 
@@ -338,7 +313,7 @@ export function addResultToUser(
         earnedScore,
         earnedXp,
         earnedTokens,
-        levelsGained: challenge.level - previousLevel,
+        levelsGained: achievementResult.updatedUser.totalLevel - previousTotalLevel,
         newAchievements: achievementResult.newAchievements,
     };
 }
