@@ -37,7 +37,7 @@ async def upsert_user(
             xp,
             total_xp,
             level,
-            (COALESCE(total_xp, xp, 0) % 100)::INTEGER AS next_level_progress,
+            (COALESCE(total_xp, xp, 0) % 1000)::INTEGER AS next_level_progress,
             streak_days,
             ref_code,
             referred_by,
@@ -68,7 +68,7 @@ async def get_profile(
             xp,
             total_xp,
             level,
-            (COALESCE(total_xp, xp, 0) % 100)::INTEGER AS next_level_progress,
+            (COALESCE(total_xp, xp, 0) % 1000)::INTEGER AS next_level_progress,
             streak_days,
             ref_code,
             referred_by
@@ -100,7 +100,7 @@ async def update_avatar(
             xp,
             total_xp,
             level,
-            (COALESCE(total_xp, xp, 0) % 100)::INTEGER AS next_level_progress,
+            (COALESCE(total_xp, xp, 0) % 1000)::INTEGER AS next_level_progress,
             streak_days,
             ref_code,
             referred_by

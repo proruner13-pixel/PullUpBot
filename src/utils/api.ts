@@ -6,7 +6,11 @@ import {
     getApiUrlSource,
     isApiEnabled,
     PullupApiError,
+    getLeaderboardAroundMe,
+    getMyLeaderboardRank,
     type ProfileDto,
+    type LeaderboardAroundEntryDto,
+    type MyLeaderboardRankDto,
 } from "../api/client";
 import { DEMO_API_USER, createDemoDashboard } from "../mocks/data";
 import {
@@ -54,6 +58,8 @@ export interface DashboardData {
     user: ApiUser;
     challenges: ApiChallenge[];
     achievements: ApiAchievement[];
+    leaderboard: LeaderboardAroundEntryDto[];
+    myLeaderboardRank: MyLeaderboardRankDto | null;
     mode: DashboardMode;
 }
 
@@ -263,7 +269,12 @@ export async function fetchDashboard(
             console.log("[DEV] API URL:", getApiUrl());
         }
 
-        const [challenges, achievements] = await Promise.all([
+        const [
+            challenges,
+            achievements,
+            leaderboardAround,
+            myLeaderboardRank,
+        ] = await Promise.all([
             apiRequest<ApiChallenge[]>(
                 "/api/challenges",
                 { method: "GET" },
@@ -279,6 +290,14 @@ export async function fetchDashboard(
             ).catch((err) => {
                 if (import.meta.env.DEV) console.warn("[DEV] /api/achievements failed:", err);
                 return [] as ApiAchievement[];
+            }),
+            getLeaderboardAroundMe(telegram.initData, 3).catch((err) => {
+                if (import.meta.env.DEV) console.warn("[DEV] /api/leaderboard/around-me failed:", err);
+                return { rank: 0, total_users: 0, items: [] };
+            }),
+            getMyLeaderboardRank(telegram.initData).catch((err) => {
+                if (import.meta.env.DEV) console.warn("[DEV] /api/leaderboard/me failed:", err);
+                return null as MyLeaderboardRankDto | null;
             }),
         ]);
         console.info("[TelegramAuth] backend dashboard response", {
@@ -298,6 +317,8 @@ export async function fetchDashboard(
                 user: authenticatedUser,
                 challenges: demo.challenges,
                 achievements: achievements && achievements.length > 0 ? achievements : demo.achievements,
+                leaderboard: leaderboardAround.items,
+                myLeaderboardRank,
                 mode: "telegram",
             };
         }
@@ -306,6 +327,8 @@ export async function fetchDashboard(
             user: authenticatedUser,
             challenges: finalChallenges as ApiChallenge[],
             achievements,
+            leaderboard: leaderboardAround.items,
+            myLeaderboardRank,
             mode: "telegram",
         };
     } catch (reason) {

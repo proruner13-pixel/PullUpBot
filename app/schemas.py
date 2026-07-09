@@ -37,6 +37,49 @@ class AchievementResponse(BaseModel):
     icon: str
 
 
+class LeaderboardUserResponse(BaseModel):
+    id: int
+    telegram_id: int
+    username: str | None
+    first_name: str | None
+    avatar_url: str | None
+    xp: int
+    level: int
+    balance: int
+    approved_workouts: int
+
+
+class LeaderboardEntryResponse(LeaderboardUserResponse):
+    rank: int
+
+
+class LeaderboardCurrentUserResponse(LeaderboardUserResponse):
+    pass
+
+
+class MyLeaderboardRankResponse(BaseModel):
+    rank: int
+    total_users: int
+    users_above: int
+    users_below: int
+    user: LeaderboardCurrentUserResponse
+
+
+class LeaderboardListResponse(BaseModel):
+    total_users: int
+    items: list[LeaderboardEntryResponse]
+
+
+class LeaderboardAroundEntryResponse(LeaderboardEntryResponse):
+    is_current_user: bool
+
+
+class LeaderboardAroundMeResponse(BaseModel):
+    rank: int
+    total_users: int
+    items: list[LeaderboardAroundEntryResponse]
+
+
 class TelegramAuthRequest(BaseModel):
     initData: str = Field(min_length=1)
 
@@ -67,7 +110,7 @@ SubmissionStatus = Literal["pending", "approved", "rejected"]
 
 class SubmissionCreateRequest(BaseModel):
     type: SubmissionType
-    value: int = Field(ge=0)
+    value: float = Field(ge=0)
     video_file_id: str | None = Field(default=None, min_length=1, max_length=1024)
     video_url: str | None = Field(default=None, min_length=1, max_length=2048)
 
@@ -99,7 +142,7 @@ class SubmissionResponse(BaseModel):
     id: int
     user_id: int
     type: SubmissionType
-    value: int
+    value: float
     video_file_id: str | None
     video_url: str | None
     status: SubmissionStatus

@@ -10,7 +10,6 @@ import {
 } from "../game/progress";
 import {
     DEMO_API_USER,
-    DEMO_LEADERBOARD,
     DEMO_TELEGRAM_ID,
 } from "../mocks/data";
 
@@ -60,10 +59,43 @@ export interface AchievementDto {
     unlocked: boolean;
 }
 
-export interface LeaderboardEntryDto {
+export interface LeaderboardUserDto {
+    id: number;
     telegram_id: number;
-    name: string;
-    score: number;
+    username: string | null;
+    first_name: string | null;
+    avatar_url: string | null;
+    xp: number;
+    level: number;
+    balance: number;
+    approved_workouts: number;
+}
+
+export interface LeaderboardEntryDto extends LeaderboardUserDto {
+    rank: number;
+}
+
+export interface LeaderboardAroundEntryDto extends LeaderboardEntryDto {
+    is_current_user: boolean;
+}
+
+export interface MyLeaderboardRankDto {
+    rank: number;
+    total_users: number;
+    users_above: number;
+    users_below: number;
+    user: LeaderboardUserDto;
+}
+
+export interface LeaderboardListDto {
+    total_users: number;
+    items: LeaderboardEntryDto[];
+}
+
+export interface LeaderboardAroundMeDto {
+    rank: number;
+    total_users: number;
+    items: LeaderboardAroundEntryDto[];
 }
 
 export type ApiFailureKind =
@@ -363,10 +395,46 @@ export async function getChallenges(initData?: string): Promise<ChallengeDto[]> 
     }));
 }
 
-export async function getLeaderboard(): Promise<LeaderboardEntryDto[]> {
+export async function getLeaderboard(
+    initData?: string,
+    limit = 50,
+    offset = 0
+): Promise<LeaderboardListDto> {
+    const params = new URLSearchParams({
+        limit: String(limit),
+        offset: String(offset),
+    });
     return isApiEnabled()
-        ? apiRequest<LeaderboardEntryDto[]>("/api/leaderboard")
-        : DEMO_LEADERBOARD.map((entry) => ({ ...entry }));
+        ? apiRequest<LeaderboardListDto>(
+              `/api/leaderboard?${params.toString()}`,
+              undefined,
+              initData
+          )
+        : { total_users: 0, items: [] };
+}
+
+export async function getMyLeaderboardRank(
+    initData?: string
+): Promise<MyLeaderboardRankDto | null> {
+    return isApiEnabled()
+        ? apiRequest<MyLeaderboardRankDto>("/api/leaderboard/me", undefined, initData)
+        : null;
+}
+
+export async function getLeaderboardAroundMe(
+    initData?: string,
+    radius = 3
+): Promise<LeaderboardAroundMeDto> {
+    const params = new URLSearchParams({
+        radius: String(radius),
+    });
+    return isApiEnabled()
+        ? apiRequest<LeaderboardAroundMeDto>(
+              `/api/leaderboard/around-me?${params.toString()}`,
+              undefined,
+              initData
+          )
+        : { rank: 0, total_users: 0, items: [] };
 }
 
 export async function updateAvatar(avatarUrl: string): Promise<ProfileDto> {

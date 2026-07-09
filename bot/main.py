@@ -519,7 +519,6 @@ async def approve_video(pullup_id: int, moderator_id: int, count: int) -> Option
                 conn,
                 user_id=row["user_id"],
                 activity_type="pullups",
-                tokens_earned=count,
                 payload={"reps": count},
                 source_type="pullup",
                 source_id=pullup_id,

@@ -7,6 +7,7 @@ import asyncpg
 
 
 SUPPORTED_ACTIVITIES = {"pullups", "pushups", "running", "plank"}
+LEVEL_XP_STEP = 1000
 ACTIVITY_ALIASES = {
     "pullup": "pullups",
     "pullups": "pullups",
@@ -31,11 +32,24 @@ def normalize_activity_type(activity_type: str) -> str:
 
 def calculate_level(total_xp: int) -> int:
     total_xp = max(int(total_xp or 0), 0)
-    return floor(total_xp / 100) + 1
+    return floor(total_xp / LEVEL_XP_STEP) + 1
 
 
 def calculateLevel(totalXp: int) -> int:
     return calculate_level(totalXp)
+
+
+def calculate_progress(total_xp: int) -> dict[str, int]:
+    total_xp = max(int(total_xp or 0), 0)
+    current_level_xp = total_xp % LEVEL_XP_STEP
+    return {
+        "level": calculate_level(total_xp),
+        "current_xp": current_level_xp,
+        "next_level_xp": LEVEL_XP_STEP,
+        "xp_to_next_level": LEVEL_XP_STEP - current_level_xp
+        if current_level_xp > 0
+        else LEVEL_XP_STEP,
+    }
 
 
 def calculate_pullup_reward(
@@ -43,15 +57,17 @@ def calculate_pullup_reward(
     payload: Mapping[str, Any],
 ) -> int:
     activity_type = normalize_activity_type(activity_type)
-    if activity_type in {"pullups", "pushups"}:
+    if activity_type == "pullups":
+        return max(int(payload.get("reps", 0) or 0), 0) * 5
+    if activity_type == "pushups":
         return max(int(payload.get("reps", 0) or 0), 0)
     if activity_type == "running":
         distance_km = payload.get("distance_km")
         if distance_km is None and payload.get("distance_m") is not None:
             distance_km = float(payload.get("distance_m", 0) or 0) / 1000
-        return max(round(float(distance_km or 0) * 10), 0)
+        return max(floor(float(distance_km or 0) * 10), 0)
     if activity_type == "plank":
-        return max(floor(int(payload.get("seconds", 0) or 0) / 10), 0)
+        return max(floor(int(payload.get("seconds", 0) or 0) / 6), 0)
     raise ValueError(f"Unsupported activity_type: {activity_type}")
 
 
@@ -60,23 +76,8 @@ def calculate_xp_reward(
     pullup_earned: int,
     payload: Mapping[str, Any] | None = None,
 ) -> int:
-    activity_type = normalize_activity_type(activity_type)
-    if activity_type == "pullups":
-        return max(pullup_earned, 0) * 2
-    if activity_type == "pushups":
-        return max(pullup_earned, 0)
-    if activity_type == "running":
-        if payload is not None:
-            distance_km = payload.get("distance_km")
-            if distance_km is None and payload.get("distance_m") is not None:
-                distance_km = float(payload.get("distance_m", 0) or 0) / 1000
-            return max(round(float(distance_km or 0) * 10), 0)
-        return max(pullup_earned, 0)
-    if activity_type == "plank":
-        if payload is not None:
-            return max(floor(int(payload.get("seconds", 0) or 0) / 10), 0)
-        return max(pullup_earned, 0)
-    raise ValueError(f"Unsupported activity_type: {activity_type}")
+    normalize_activity_type(activity_type)
+    return max(int(pullup_earned or 0), 0)
 
 
 def calculate_xp(
@@ -95,7 +96,7 @@ def progress_value(activity_type: str, payload: Mapping[str, Any]) -> int:
         distance_km = payload.get("distance_km")
         if distance_km is None and payload.get("distance_m") is not None:
             distance_km = float(payload.get("distance_m", 0) or 0) / 1000
-        return round(float(distance_km or 0))
+        return floor(float(distance_km or 0))
     if activity_type == "plank":
         return int(payload.get("seconds", 0) or 0)
     raise ValueError(f"Unsupported activity_type: {activity_type}")
@@ -282,7 +283,7 @@ async def apply_workout_rewards(
             challenge.id,
             $3,
             $4,
-            ($4 / 100) + 1
+            ($4 / 1000) + 1
         FROM challenges AS challenge
         WHERE challenge.slug = $2
         ON CONFLICT (user_id, challenge_id) DO UPDATE
@@ -291,7 +292,7 @@ async def apply_workout_rewards(
                 ELSE user_challenges.progress
             END,
             xp = user_challenges.xp + EXCLUDED.xp,
-            level = ((user_challenges.xp + EXCLUDED.xp) / 100) + 1,
+            level = ((user_challenges.xp + EXCLUDED.xp) / 1000) + 1,
             completed = CASE
                 WHEN $5
                     THEN (user_challenges.progress + EXCLUDED.progress) >= (

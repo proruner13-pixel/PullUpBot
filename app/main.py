@@ -14,6 +14,7 @@ from app.routers import (
     auth,
     challenges,
     health,
+    leaderboard,
     profile,
     submissions,
     users,
@@ -66,6 +67,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.include_router(users.router, prefix="/api")
     application.include_router(challenges.router, prefix="/api")
     application.include_router(achievements.router, prefix="/api")
+    application.include_router(leaderboard.router, prefix="/api")
     application.include_router(auth.router)
     application.include_router(profile.router)
     application.include_router(submissions.router)

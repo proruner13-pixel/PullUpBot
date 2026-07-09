@@ -77,7 +77,7 @@ async def _save_upload(
 async def submit_video(
     request: Request,
     type: str = Form(...),
-    value: int = Form(...),
+    value: float = Form(...),
     video: UploadFile | None = File(default=None),
     video_url: str | None = Form(default=None),
     caption: str | None = Form(default=None),
@@ -149,6 +149,7 @@ async def submit_video(
                         file_path=file_path,
                         file_url=file_url,
                         caption=caption or f"{payload.type}: {payload.value}",
+                        count=int(payload.value),
                     )
                     logger.info(
                         "WEBAPP_PULLUP_INSERTED telegram_id=%s user_id=%s pullup_id=%s source=webapp",

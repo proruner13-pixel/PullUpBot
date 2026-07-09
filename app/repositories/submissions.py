@@ -20,7 +20,7 @@ async def create_submission(
     *,
     telegram_id: int,
     submission_type: str,
-    value: int,
+    value: float,
     video_file_id: str | None,
     video_url: str | None,
 ) -> asyncpg.Record:
@@ -51,6 +51,7 @@ async def create_webapp_pullup(
     file_path: str | None,
     file_url: str | None,
     caption: str | None,
+    count: int | None,
 ) -> asyncpg.Record:
     return await connection.fetchrow(
         """
@@ -65,7 +66,7 @@ async def create_webapp_pullup(
             status,
             created_at
         )
-        VALUES ($1, NULL, $2, $3, 'webapp', $4, NULL, 'pending', NOW())
+        VALUES ($1, NULL, $2, $3, 'webapp', $4, $5, 'pending', NOW())
         RETURNING
             id,
             user_id,
@@ -82,6 +83,7 @@ async def create_webapp_pullup(
         file_path,
         file_url,
         caption,
+        count,
     )
 
 

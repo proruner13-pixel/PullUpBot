@@ -52,23 +52,7 @@ export function createDemoDashboard(
             ...challenge,
         })),
         achievements: [...EMPTY_DEMO_ACHIEVEMENTS],
+        leaderboard: [],
+        myLeaderboardRank: null,
     };
 }
-
-export const DEMO_LEADERBOARD = [
-    {
-        telegram_id: 912000001,
-        name: "Алексей Ворон",
-        score: 9860,
-    },
-    {
-        telegram_id: 912000002,
-        name: "Мария Сталь",
-        score: 9130,
-    },
-    {
-        telegram_id: DEMO_TELEGRAM_ID,
-        name: "Athlete",
-        score: 0,
-    },
-] as const;

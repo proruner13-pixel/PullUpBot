@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo,useRef, useState } from "react";
+import { useCallback, useEffect, useMemo,useRef, useState, type CSSProperties } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
     Activity,
@@ -6,6 +6,7 @@ import {
     CalendarDays,
     Check,
     ChevronRight,
+    Coins as CoinsIcon,
     Copy,
     Dumbbell,
     Flame,
@@ -88,7 +89,11 @@ import {
     type User as GameUser,
 } from "./game/progress";
 import { createDemoDashboard } from "./mocks/data";
-import { resetDemoProgress as resetStoredDemoProgress } from "./api/client";
+import {
+    resetDemoProgress as resetStoredDemoProgress,
+    type LeaderboardAroundEntryDto,
+    type MyLeaderboardRankDto,
+} from "./api/client";
 import {
     EFFECT_STORAGE_KEYS,
     animationsEnabled,
@@ -252,6 +257,53 @@ function apiLevelProgress(value: number | undefined, xp: number): number {
     return value ?? levelProgress(xp);
 }
 
+const PROFILE_LEVEL_MILESTONES = [100, 300, 600, 1000, 1500, 2000, 3000];
+
+function athleteTitle(level: number): string {
+    if (level >= 20) return "Легенда";
+    if (level >= 15) return "Чемпион";
+    if (level >= 10) return "Мастер";
+    if (level >= 5) return "Атлет";
+    return "Новичок";
+}
+
+function profileChallengeValue(
+    challenges: ApiChallenge[],
+    exercise: string
+): number {
+    return Math.max(
+        0,
+        Math.round(
+            challenges.find((challenge) => challenge.exercise === exercise)
+                ?.progress ?? 0
+        )
+    );
+}
+
+function formatCompactDuration(totalSeconds: number): string {
+    const seconds = Math.max(0, Math.round(totalSeconds));
+    const hours = Math.floor(seconds / 3600);
+    const minutes = Math.floor((seconds % 3600) / 60);
+
+    if (hours > 0) return `${hours} ч ${minutes} мин`;
+    if (minutes > 0) return `${minutes} мин`;
+    return `${seconds} сек`;
+}
+
+function formatDistance(value: number): string {
+    return `${Math.max(0, value).toLocaleString("ru-RU")} км`;
+}
+
+function userGreetingName(user: ApiUser | null): string {
+    if (!user) return "спортсмен";
+    return (
+        user.first_name ||
+        user.display_name?.split(" ")[0] ||
+        user.username ||
+        "спортсмен"
+    );
+}
+
 function toDayKey(date: Date): string {
     const year = date.getFullYear();
     const month = String(date.getMonth() + 1).padStart(2, "0");
@@ -263,6 +315,19 @@ function formatShortDate(date: Date): string {
     return `${String(date.getDate()).padStart(2, "0")}.${String(
         date.getMonth() + 1
     ).padStart(2, "0")}`;
+}
+
+function formatRelativeWorkoutDate(value: string): string {
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    const diffMs = Date.now() - date.getTime();
+    const diffMinutes = Math.max(0, Math.floor(diffMs / 60000));
+    if (diffMinutes < 60) return `${Math.max(diffMinutes, 1)} мин назад`;
+    const diffHours = Math.floor(diffMinutes / 60);
+    if (diffHours < 24) return `${diffHours} ч назад`;
+    const diffDays = Math.floor(diffHours / 24);
+    if (diffDays === 1) return "Вчера";
+    return `${diffDays} дн назад`;
 }
 
 function formatFullDate(date: Date): string {
@@ -570,45 +635,74 @@ function ScreenHeader({
 
 function Dashboard({
     user,
-    gameUser,
     avatarUrl,
     challenges,
+    achievementsCount,
+    ratingPlace,
+    recentWorkouts,
     onOpenChallenges,
-    onOpenWorkouts,
     onOpenLeaderboard,
     onOpenAvatar,
     onOpenMenu,
     onOpenNotifications,
     onOpenChallenge,
-    onOpenSite,
+    onAddWorkout,
 }: {
     user: ApiUser;
-    gameUser: GameUser;
     avatarUrl: string;
     challenges: ApiChallenge[];
+    achievementsCount: number;
+    ratingPlace: number | null;
+    recentWorkouts: WorkoutEntry[];
     onOpenChallenges: () => void;
-    onOpenWorkouts: () => void;
     onOpenLeaderboard: () => void;
     onOpenAvatar: () => void;
     onOpenMenu: () => void;
     onOpenNotifications: () => void;
     onOpenChallenge: (challenge: ApiChallenge) => void;
-    onOpenSite: () => void;
+    onAddWorkout: () => void;
 }) {
-    const overall = challenges.length
-        ? Math.round(
-              challenges.reduce((sum, item) => sum + percent(item), 0) /
-                  challenges.length
-          )
-        : 0;
     const nearest =
         [...challenges]
             .filter((item) => percent(item) < 100)
             .sort((a, b) => percent(b) - percent(a))[0] ?? challenges[0];
+    const challengeVisual = nearest
+        ? CHALLENGE_VISUALS[nearest.exercise] ?? CHALLENGE_VISUALS.pullups
+        : CHALLENGE_VISUALS.pullups;
+    const firstName =
+        user.first_name ||
+        user.display_name.split(" ")[0] ||
+        user.username ||
+        "Атлет";
+    const currentXp = Math.max(user.total_xp, 0);
+    const levelBaseXp = Math.max(user.level - 1, 0) * 100;
+    const levelXp = Math.max(currentXp - levelBaseXp, 0);
+    const levelProgressPercent = Math.min(100, levelXp);
+    const xpToNext = Math.max(100 - levelXp, 0);
+    const stats = {
+        pullups:
+            challenges.find((challenge) => challenge.exercise === "pullups")
+                ?.progress ?? 0,
+        pushups:
+            challenges.find((challenge) => challenge.exercise === "pushups")
+                ?.progress ?? 0,
+        plank:
+            challenges.find((challenge) => challenge.exercise === "plank")
+                ?.progress ?? 0,
+        running:
+            challenges.find((challenge) => challenge.exercise === "running")
+                ?.progress ?? 0,
+    };
+    const recent = [...recentWorkouts]
+        .sort(
+            (a, b) =>
+                new Date(b.date).getTime() - new Date(a.date).getTime()
+        )
+        .slice(0, 3);
 
     return (
         <>
-            <div className="topbar">
+            <div className="topbar home-topbar">
                 <button
                     className="icon-button"
                     aria-label="Меню"
@@ -616,128 +710,202 @@ function Dashboard({
                 >
                     <Menu size={20} />
                 </button>
-                <span className="brand">PULLUP</span>
+                <span className="brand home-brand">PULLUP</span>
                 <button
-                    className="icon-button"
+                    className="icon-button home-alert"
                     aria-label="Уведомления"
                     onClick={onOpenNotifications}
                 >
                     <Zap size={19} />
+                    <span />
                 </button>
             </div>
 
-            <section className="hero-profile">
+            <section className="home-profile-card">
                 <button
-                    className="avatar avatar-button"
+                    className="avatar avatar-button home-avatar"
                     onClick={onOpenAvatar}
                     aria-label="Сменить аватар"
                 >
                     <img src={avatarUrl} alt="" />
-                    <span className="avatar-edit-dot">
-                        <Plus size={12} />
-                    </span>
+                    <span className="home-level-badge">{user.level}</span>
                 </button>
-                <div className="hero-copy">
-                    <span>Уровень спортсмена</span>
-                    <strong>{gameUser.totalLevel}</strong>
-                    <small>общий уровень</small>
-                </div>
-                <div className="streak">
-                    <Flame size={22} fill="currentColor" />
-                    <div>
-                        <strong>
-                            {
-                                challenges.filter(
-                                    (challenge) => challenge.progress > 0
-                                ).length
-                            }
-                        </strong>
-                        <span>активности</span>
+                <div className="home-profile-main">
+                    <h1>Привет, {firstName}! 👋</h1>
+                    <span>Уровень {user.level} · Атлет</span>
+                    <div className="home-xp-line">
+                        <strong>{currentXp.toLocaleString("ru-RU")}</strong>
+                        <span>/ {(levelBaseXp + 100).toLocaleString("ru-RU")} XP</span>
                     </div>
+                    <div className="home-xp-progress">
+                        <div style={{ width: `${levelProgressPercent}%` }} />
+                    </div>
+                    <small>До уровня {user.level + 1} осталось {xpToNext} XP</small>
+                </div>
+                <div className="home-trophy">
+                    <Trophy size={44} />
                 </div>
             </section>
 
-            <section className="game-economy" aria-label="Игровой прогресс">
-                <div>
-                    <span>Спорт-рейтинг</span>
-                    <strong>
-                        {Object.values(gameUser.challenges)
-                            .reduce(
-                                (sum, challenge) =>
-                                    sum + challenge.monthlyScore,
-                                0
-                            )
-                            .toLocaleString("ru-RU")}
-                    </strong>
-                </div>
-                <div>
-                    <span>Опыт</span>
-                    <strong>{user.total_xp.toLocaleString("ru-RU")} XP</strong>
-                </div>
+            <section className="pullup-balance-card" aria-label="Баланс PULLUP">
+                <div className="pullup-coin">P</div>
                 <div>
                     <span>Баланс</span>
                     <strong>
-                        <AnimatedNumber value={user.tokens} /> PULLUP
+                        <AnimatedNumber value={user.tokens} />
+                        <small>PULLUP</small>
                     </strong>
                 </div>
+                <CoinsIcon />
+                <ChevronRight size={22} />
             </section>
 
-            <section className="panel progress-panel">
-                <div>
-                    <span className="section-kicker">Прогресс дня</span>
-                    <h2>Ты движешься к цели</h2>
-                    <p>Ещё немного — и новый уровень твой.</p>
-                </div>
-                <ProgressRing value={overall} />
+            <section className="home-quick-stats">
+                <button>
+                    <Flame size={23} />
+                    <span>Серия</span>
+                    <strong>{user.streak_days}</strong>
+                    <small>дней</small>
+                </button>
+                <button onClick={onOpenLeaderboard}>
+                    <Trophy size={23} />
+                    <span>Рейтинг</span>
+                    <strong>{ratingPlace ? `#${ratingPlace}` : "—"}</strong>
+                    <small>в общем зачёте</small>
+                </button>
+                <button onClick={onAddWorkout}>
+                    <Zap size={23} />
+                    <span>Активности</span>
+                    <strong>{recentWorkouts.length}</strong>
+                    <small>тренировок</small>
+                </button>
+                <button onClick={onOpenChallenges}>
+                    <Award size={23} />
+                    <span>Достижения</span>
+                    <strong>{achievementsCount}</strong>
+                    <small>получено</small>
+                </button>
             </section>
 
             {nearest && (
-                <section>
-                    <div className="section-title">
-                        <div>
-                            <span>Следующая цель</span>
-                            <h2>Ближайший челлендж</h2>
+                <section
+                    className="daily-challenge-card"
+                    style={{ "--accent": challengeVisual.color } as CSSProperties}
+                >
+                    <div className="daily-challenge-copy">
+                        <span>🔥 Сегодняшний челлендж</span>
+                        <h2>{challengeVisual.shortLabel}</h2>
+                        <p>
+                            <strong>{nearest.progress.toLocaleString("ru-RU")}</strong>
+                            {" / "}
+                            {nearest.goal.toLocaleString("ru-RU")}{" "}
+                            {nearest.exercise === "running"
+                                ? "км"
+                                : nearest.exercise === "plank"
+                                  ? "сек"
+                                  : "повторений"}
+                        </p>
+                        <div className="daily-progress">
+                            <div style={{ width: `${percent(nearest)}%` }} />
                         </div>
-                        <button onClick={onOpenChallenges}>
-                            Все <ChevronRight size={16} />
-                        </button>
+                        <small>
+                            Осталось{" "}
+                            {Math.max(nearest.goal - nearest.progress, 0).toLocaleString("ru-RU")}
+                        </small>
                     </div>
-                    <ChallengeCard
-                        challenge={nearest}
-                        compact
+                    <div className="daily-visual">
+                        <span>{challengeVisual.icon}</span>
+                    </div>
+                    <button
+                        className="daily-reward"
                         onClick={() => onOpenChallenge(nearest)}
-                    />
+                    >
+                        <small>Награда</small>
+                        <strong>+{challengeVisual.reward} PULLUP</strong>
+                    </button>
                 </section>
             )}
 
-            <section className="quick-grid">
-                <button onClick={onOpenChallenges}>
-                    <Target />
-                    <span>Челленджи</span>
-                    <strong>{challenges.length}</strong>
-                </button>
-                <button onClick={onOpenWorkouts}>
-                    <Activity />
-                    <span>Тренировки</span>
-                    <strong>{challenges.reduce((sum, c) => sum + (c.progress > 0 ? 1 : 0), 0)}</strong>
-                </button>
-                <button onClick={onOpenLeaderboard}>
-                    <Medal />
-                    <span>Рейтинг</span>
-                    <strong>TOP</strong>
-                </button>
+            <button className="home-action-button" onClick={onAddWorkout}>
+                <Video size={30} fill="currentColor" />
+                <span>
+                    <strong>Добавить тренировку</strong>
+                    <small>Загрузи видео и получи PULLUP</small>
+                </span>
+                <ChevronRight size={24} />
+            </button>
+
+            <section className="home-total-stats panel">
+                <h2>Твоя статистика</h2>
+                <div>
+                    <article>
+                        <span>🏋️</span>
+                        <strong>{stats.pullups.toLocaleString("ru-RU")}</strong>
+                        <small>подтягиваний</small>
+                    </article>
+                    <article>
+                        <span>💪</span>
+                        <strong>{stats.pushups.toLocaleString("ru-RU")}</strong>
+                        <small>отжиманий</small>
+                    </article>
+                    <article>
+                        <span>🧘</span>
+                        <strong>{stats.plank.toLocaleString("ru-RU")}</strong>
+                        <small>сек планки</small>
+                    </article>
+                    <article>
+                        <span>🏃</span>
+                        <strong>{stats.running.toLocaleString("ru-RU")}</strong>
+                        <small>км бег</small>
+                    </article>
+                </div>
             </section>
 
-            <button className="project-site-card" onClick={onOpenSite}>
-                <span className="project-site-card__icon">
-                    <Globe2 size={21} />
-                </span>
-                <span>
-                    <small>Официальный ресурс</small>
-                    <strong>Сайт проекта PULLUP</strong>
-                </span>
-                <ChevronRight size={18} />
-            </button>
+            <section className="recent-workouts-card panel">
+                <div className="recent-workouts-head">
+                    <h2>Последние тренировки</h2>
+                    <button onClick={onAddWorkout}>
+                        Все <ChevronRight size={16} />
+                    </button>
+                </div>
+                {recent.length ? (
+                    <div className="recent-workout-list">
+                        {recent.map((workout, index) => {
+                            const meta = WORKOUT_TYPE_META[workout.type];
+                            return (
+                                <article key={`${workout.date}-${index}`}>
+                                    <div
+                                        className="recent-workout-thumb"
+                                        style={{ "--accent": meta.color } as CSSProperties}
+                                    >
+                                        <span>
+                                            {workout.type === "run"
+                                                ? "🏃"
+                                                : workout.type === "plank"
+                                                  ? "🧘"
+                                                  : workout.type === "pushup"
+                                                    ? "💪"
+                                                    : "🏋️"}
+                                        </span>
+                                    </div>
+                                    <div>
+                                        <strong>{meta.label}</strong>
+                                        <span>
+                                            +{workout.tokens} PULLUP ·{" "}
+                                            {formatRelativeWorkoutDate(workout.date)}
+                                        </span>
+                                    </div>
+                                    <b>Одобрено</b>
+                                </article>
+                            );
+                        })}
+                    </div>
+                ) : (
+                    <div className="home-empty-recent">
+                        Последние тренировки появятся после одобрения модератором
+                    </div>
+                )}
+            </section>
         </>
     );
 }
@@ -986,21 +1154,124 @@ function WorkoutsScreen({
 
 function ProfileScreen({
     user,
-    gameUser,
     badges,
+    challenges,
+    achievements,
+    workouts,
+    ratingPlace,
     avatarUrl,
     onOpenAvatar,
     onOpenSettings,
+    onOpenAchievements,
+    onOpenLeaderboard,
+    onOpenReferrals,
+    onOpenLogout,
 }: {
     user: ApiUser;
-    gameUser: GameUser;
     badges: string[];
+    challenges: ApiChallenge[];
+    achievements: ApiAchievement[];
+    workouts: WorkoutEntry[];
+    ratingPlace: number | null;
     avatarUrl: string;
     onOpenAvatar: () => void;
     onOpenSettings: () => void;
+    onOpenAchievements: () => void;
+    onOpenLeaderboard: () => void;
+    onOpenReferrals: () => void;
+    onOpenLogout: () => void;
 }) {
     const referralLink = `https://t.me/ActiveRunBot?start=${user.telegram_id}`;
     const [copied, setCopied] = useState(false);
+    const displayName =
+        user.display_name ||
+        user.first_name ||
+        user.username ||
+        `Telegram ${user.telegram_id}`;
+    const title = athleteTitle(user.level);
+    const progress = Math.min(
+        100,
+        apiLevelProgress(user.next_level_progress, user.total_xp)
+    );
+    const xpToNext = Math.max(0, 100 - progress);
+    const pullups = profileChallengeValue(challenges, "pullups");
+    const pushups = profileChallengeValue(challenges, "pushups");
+    const plankSeconds = profileChallengeValue(challenges, "plank");
+    const runningKm = profileChallengeValue(challenges, "running");
+    const activeWorkoutDays = new Set(
+        workouts.map((workout) => toDayKey(new Date(workout.date)))
+    ).size;
+    const monthXp = workouts.reduce((sum, workout) => sum + workout.xp, 0);
+    const monthTokens = workouts.reduce((sum, workout) => sum + workout.tokens, 0);
+    const activityValues = [
+        {
+            label: "Подтягивания",
+            value: pullups,
+            color: CHALLENGE_VISUALS.pullups.color,
+        },
+        {
+            label: "Отжимания",
+            value: pushups,
+            color: CHALLENGE_VISUALS.pushups.color,
+        },
+        {
+            label: "Планка",
+            value: plankSeconds,
+            color: CHALLENGE_VISUALS.plank.color,
+        },
+        {
+            label: "Бег",
+            value: runningKm,
+            color: CHALLENGE_VISUALS.running.color,
+        },
+    ];
+    const activityTotal = activityValues.reduce(
+        (sum, item) => sum + item.value,
+        0
+    );
+    const pullupShare = activityTotal ? (pullups / activityTotal) * 100 : 25;
+    const pushupShare = activityTotal ? pullupShare + (pushups / activityTotal) * 100 : 50;
+    const plankShare = activityTotal ? pushupShare + (plankSeconds / activityTotal) * 100 : 75;
+    const unlockedAchievements = achievements.length
+        ? achievements
+        : badges.map((badge) => ({
+              code: badge,
+              title: badge,
+              icon: "🏆",
+          }));
+    const recordCards = [
+        {
+            label: "подтягиваний",
+            value: pullups ? Math.min(pullups, 50).toLocaleString("ru-RU") : "0",
+            color: CHALLENGE_VISUALS.pullups.color,
+            icon: CHALLENGE_VISUALS.pullups.icon,
+        },
+        {
+            label: "отжиманий",
+            value: pushups ? Math.min(pushups, 100).toLocaleString("ru-RU") : "0",
+            color: CHALLENGE_VISUALS.pushups.color,
+            icon: CHALLENGE_VISUALS.pushups.icon,
+        },
+        {
+            label: "планка",
+            value: formatCompactDuration(plankSeconds),
+            color: CHALLENGE_VISUALS.plank.color,
+            icon: CHALLENGE_VISUALS.plank.icon,
+        },
+        {
+            label: "бег",
+            value: formatDistance(runningKm),
+            color: CHALLENGE_VISUALS.running.color,
+            icon: CHALLENGE_VISUALS.running.icon,
+        },
+    ];
+    const frameCards = [
+        { label: "Базовая", unlocked: true, accent: "#71e45b" },
+        { label: "Атлет", unlocked: user.level >= 5, accent: "#d86cff" },
+        { label: "Мастер", unlocked: user.level >= 10, accent: "#ffd84f" },
+        { label: "Чемпион", unlocked: user.level >= 15, accent: "#ff6f55" },
+        { label: "Легенда", unlocked: user.level >= 20, accent: "#55d7ff" },
+    ];
 
     const copyReferral = async () => {
         await navigator.clipboard.writeText(referralLink);
@@ -1010,10 +1281,10 @@ function ProfileScreen({
 
     return (
         <>
-            <ScreenHeader title="Профиль" eyebrow="Твой прогресс" />
-            <section className="profile-card">
+            <ScreenHeader title="Профиль" eyebrow="Путь спортсмена" />
+            <section className="profile-hero-card">
                 <button
-                    className="avatar avatar--large avatar-button"
+                    className="avatar avatar--large avatar-button profile-hero-avatar"
                     onClick={onOpenAvatar}
                 >
                     <img src={avatarUrl} alt="" />
@@ -1021,61 +1292,216 @@ function ProfileScreen({
                         <Plus size={12} />
                     </span>
                 </button>
-                <h2>
-                    {user.display_name ||
-                        user.first_name ||
-                        user.username ||
-                        `Telegram ${user.telegram_id}`}
-                </h2>
-                <span>
-                    {user.username
-                        ? `@${user.username}`
-                        : `Telegram ID ${user.telegram_id}`}
-                </span>
-                <small>Telegram ID: {user.telegram_id}</small>
-                <div className="level-line">
-                    <div
-                        style={{
-                            width: `${Math.min(
-                                100,
-                                apiLevelProgress(
-                                    user.next_level_progress,
-                                    user.total_xp
-                                )
-                            )}%`,
-                        }}
-                    />
+                <div className="profile-hero-main">
+                    <h2>{displayName}</h2>
+                    <span>
+                        <ShieldCheck size={14} /> {title}
+                    </span>
+                    <strong>Уровень {user.level}</strong>
+                    <div className="level-line profile-level-line">
+                        <div style={{ width: `${progress}%` }} />
+                    </div>
+                    <small>
+                        {user.total_xp.toLocaleString("ru-RU")} XP · до уровня{" "}
+                        {user.level + 1} осталось {xpToNext} XP
+                    </small>
                 </div>
-                <small>
-                    Общий уровень {user.level} · до следующего уровня{" "}
-                    {100 -
-                        apiLevelProgress(
-                            user.next_level_progress,
-                            user.total_xp
-                        )} XP
-                </small>
+                <button
+                    className="profile-rank-badge"
+                    type="button"
+                    onClick={onOpenLeaderboard}
+                >
+                    <Trophy size={42} />
+                    <strong>{ratingPlace ? `ТОП ${ratingPlace}` : "Рейтинг"}</strong>
+                    <span>в общем зачёте</span>
+                </button>
             </section>
-            <div className="profile-stats">
-                <div>
-                    <span>Токены</span>
-                    <strong>🪙 {user.tokens}</strong>
+
+            <section className="profile-total-stats">
+                <article>
+                    <span>{CHALLENGE_VISUALS.pullups.icon}</span>
+                    <strong>{pullups.toLocaleString("ru-RU")}</strong>
+                    <small>подтягиваний</small>
+                </article>
+                <article>
+                    <span>{CHALLENGE_VISUALS.pushups.icon}</span>
+                    <strong>{pushups.toLocaleString("ru-RU")}</strong>
+                    <small>отжиманий</small>
+                </article>
+                <article>
+                    <span>{CHALLENGE_VISUALS.plank.icon}</span>
+                    <strong>{formatCompactDuration(plankSeconds)}</strong>
+                    <small>планка</small>
+                </article>
+                <article>
+                    <span>{CHALLENGE_VISUALS.running.icon}</span>
+                    <strong>{formatDistance(runningKm)}</strong>
+                    <small>бег</small>
+                </article>
+            </section>
+
+            <section className="panel profile-records-panel">
+                <div className="section-row">
+                    <span className="section-kicker">Личные рекорды</span>
+                    <button type="button" onClick={onOpenSettings}>
+                        Все рекорды <ChevronRight size={14} />
+                    </button>
                 </div>
-                <div>
-                    <span>Опыт</span>
-                    <strong>{user.total_xp} XP</strong>
+                <div className="profile-records-grid">
+                    {recordCards.map((record) => (
+                        <article
+                            key={record.label}
+                            style={{ "--accent": record.color } as CSSProperties}
+                        >
+                            <span>{record.icon}</span>
+                            <strong>{record.value}</strong>
+                            <small>{record.label}</small>
+                        </article>
+                    ))}
                 </div>
+            </section>
+
+            <section className="panel athlete-path-panel">
+                <div className="section-row">
+                    <span className="section-kicker">Путь спортсмена</span>
+                    <button type="button" onClick={onOpenSettings}>
+                        История уровней <ChevronRight size={14} />
+                    </button>
+                </div>
+                <div className="athlete-path-line">
+                    {PROFILE_LEVEL_MILESTONES.map((xp, index) => {
+                        const level = index + 1;
+                        const active = user.total_xp >= xp || user.level >= level;
+                        const current =
+                            user.total_xp < xp &&
+                            (index === 0 ||
+                                user.total_xp >= PROFILE_LEVEL_MILESTONES[index - 1]);
+
+                        return (
+                            <div
+                                key={xp}
+                                className={[
+                                    "athlete-path-step",
+                                    active ? "is-active" : "",
+                                    current ? "is-current" : "",
+                                ]
+                                    .filter(Boolean)
+                                    .join(" ")}
+                            >
+                                <b>{level}</b>
+                                <span>{xp} XP</span>
+                            </div>
+                        );
+                    })}
+                </div>
+            </section>
+
+            <div className="profile-analytics-grid">
+                <section className="panel activity-distribution-panel">
+                    <span className="section-kicker">Распределение активности</span>
+                    <div
+                        className="activity-donut"
+                        style={
+                            {
+                                "--pullups": `${pullupShare}%`,
+                                "--pushups": `${pushupShare}%`,
+                                "--plank": `${plankShare}%`,
+                            } as CSSProperties
+                        }
+                    >
+                        <span>{activityTotal ? "XP" : "0"}</span>
+                    </div>
+                    <div className="activity-distribution-list">
+                        {activityValues.map((item) => {
+                            const share = activityTotal
+                                ? Math.round((item.value / activityTotal) * 100)
+                                : 0;
+                            return (
+                                <div key={item.label}>
+                                    <i style={{ background: item.color }} />
+                                    <strong>{share}%</strong>
+                                    <span>{item.label}</span>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </section>
+
+                <section className="panel profile-season-panel">
+                    <span className="section-kicker">Сезон</span>
+                    <div>
+                        <CoinsIcon size={18} />
+                        <strong>+{monthXp.toLocaleString("ru-RU")} XP</strong>
+                        <span>за последние тренировки</span>
+                    </div>
+                    <div>
+                        <Medal size={18} />
+                        <strong>
+                            +{(monthTokens || user.tokens).toLocaleString("ru-RU")} PULLUP
+                        </strong>
+                        <span>заработано</span>
+                    </div>
+                    <div>
+                        <Dumbbell size={18} />
+                        <strong>{workouts.length}</strong>
+                        <span>тренировки</span>
+                    </div>
+                    <div>
+                        <Flame size={18} />
+                        <strong>{activeWorkoutDays || user.streak_days}</strong>
+                        <span>дней активности</span>
+                    </div>
+                </section>
             </div>
-            <section className="panel profile-achievements">
-                <span className="section-kicker">Ачивки</span>
+
+            <section className="panel profile-achievements-strip">
+                <div className="section-row">
+                    <span className="section-kicker">Мои достижения</span>
+                    <button type="button" onClick={onOpenAchievements}>
+                        Все <ChevronRight size={14} />
+                    </button>
+                </div>
                 <div>
-                    {badges.length ? (
-                        badges.map((badge) => <b key={badge}>{badge}</b>)
+                    {unlockedAchievements.length ? (
+                        unlockedAchievements.slice(0, 6).map((achievement) => (
+                            <article key={achievement.code}>
+                                <b>{achievement.icon}</b>
+                                <span>{achievement.title}</span>
+                            </article>
+                        ))
                     ) : (
-                        <p>Нет ачивок</p>
+                        <p>Первые достижения откроются после тренировок.</p>
                     )}
                 </div>
             </section>
-            <section className="panel referral">
+
+            <section className="panel avatar-frames-panel">
+                <div className="section-row">
+                    <span className="section-kicker">Рамки аватара</span>
+                    <button type="button" onClick={onOpenAvatar}>
+                        Все рамки <ChevronRight size={14} />
+                    </button>
+                </div>
+                <div>
+                    {frameCards.map((frame, index) => (
+                        <button
+                            key={frame.label}
+                            type="button"
+                            onClick={onOpenAvatar}
+                            className={index === 0 ? "is-selected" : ""}
+                            style={{ "--accent": frame.accent } as CSSProperties}
+                        >
+                            <span>
+                                <img src={avatarUrl} alt="" />
+                                {frame.unlocked ? <Check size={13} /> : <ShieldCheck size={13} />}
+                            </span>
+                            <strong>{frame.label}</strong>
+                        </button>
+                    ))}
+                </div>
+            </section>
+
+            <section className="panel referral profile-referral">
                 <div>
                     <span className="section-kicker">Реферальная ссылка</span>
                     <p>{referralLink}</p>
@@ -1084,18 +1510,39 @@ function ProfileScreen({
                     {copied ? <Check size={19} /> : <Copy size={19} />}
                 </button>
             </section>
-            <div className="settings-list">
+
+            <section className="profile-settings-grid">
                 <button onClick={onOpenSettings}>
-                    <Settings size={19} />
-                    Настройки
-                    <ChevronRight size={18} />
+                    <UserRound size={18} />
+                    Редактировать профиль
+                    <ChevronRight size={17} />
                 </button>
                 <button onClick={onOpenSettings}>
-                    <ShieldCheck size={19} />
+                    <Zap size={18} />
+                    Уведомления
+                    <ChevronRight size={17} />
+                </button>
+                <button onClick={onOpenSettings}>
+                    <ShieldCheck size={18} />
                     Конфиденциальность
-                    <ChevronRight size={18} />
+                    <ChevronRight size={17} />
                 </button>
-            </div>
+                <button onClick={onOpenSettings}>
+                    <Globe2 size={18} />
+                    Язык
+                    <span>Русский</span>
+                </button>
+                <button onClick={onOpenReferrals}>
+                    <Copy size={18} />
+                    Реферальная программа
+                    <ChevronRight size={17} />
+                </button>
+                <button className="danger" onClick={onOpenLogout}>
+                    <X size={18} />
+                    Выйти из аккаунта
+                    <ChevronRight size={17} />
+                </button>
+            </section>
         </>
     );
 }
@@ -1422,6 +1869,62 @@ function AddWorkoutModal({
     );
 }
 
+function StartupGreeting({
+    user,
+    mode,
+}: {
+    user: ApiUser | null;
+    mode: "loading" | "welcome";
+}) {
+    const name = userGreetingName(user);
+    const isWelcome = mode === "welcome" && user;
+
+    return (
+        <div className="startup-greeting">
+            <motion.div
+                className="startup-greeting-card"
+                initial={{ opacity: 0, y: 18, scale: 0.97 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                transition={{ duration: 0.42, ease: "easeOut" }}
+            >
+                <div className="startup-brand-orbit" aria-hidden="true">
+                    <span />
+                    <Dumbbell size={34} />
+                </div>
+                <span className="startup-kicker">PULLUP</span>
+                <h1>
+                    {isWelcome
+                        ? `Привет, ${name}!`
+                        : "Открываем твою арену"}
+                </h1>
+                <p>
+                    {isWelcome
+                        ? "Рады видеть тебя снова. Прогресс уже на месте."
+                        : "Собираем прогресс, тренировки и достижения."}
+                </p>
+                {isWelcome ? (
+                    <div className="startup-user-stats">
+                        <div>
+                            <Trophy size={18} />
+                            <strong>Уровень {user.level}</strong>
+                            <span>{athleteTitle(user.level)}</span>
+                        </div>
+                        <div>
+                            <CoinsIcon size={18} />
+                            <strong>{user.tokens.toLocaleString("ru-RU")}</strong>
+                            <span>PULLUP</span>
+                        </div>
+                    </div>
+                ) : (
+                    <div className="startup-loader">
+                        <i />
+                    </div>
+                )}
+            </motion.div>
+        </div>
+    );
+}
+
 export default function App() {
     const [activeView, setActiveView] = useState<AppView>("home");
     const [user, setUser] = useState<ApiUser | null>(null);
@@ -1430,6 +1933,11 @@ export default function App() {
         useState<WorkoutEntry[]>(readDemoWorkouts);
     const [apiChallenges, setApiChallenges] = useState<ApiChallenge[]>([]);
     const [achievements, setAchievements] = useState<ApiAchievement[]>([]);
+    const [leaderboardEntries, setLeaderboardEntries] = useState<
+        LeaderboardAroundEntryDto[]
+    >([]);
+    const [myLeaderboardRank, setMyLeaderboardRank] =
+        useState<MyLeaderboardRankDto | null>(null);
     const [dashboardMode, setDashboardMode] = useState<DashboardMode>(() =>
         detectAppMode(getTelegramWebApp())
     );
@@ -1446,6 +1954,7 @@ export default function App() {
     const [apiHealthResponse, setApiHealthResponse] =
         useState<ApiHealthResponse | null>(null);
     const [loading, setLoading] = useState(true);
+    const [showStartupGreeting, setShowStartupGreeting] = useState(true);
     const [authRetryNonce, setAuthRetryNonce] = useState(0);
     const [error, setError] = useState<string | null>(null);
     const [showWorkoutModal, setShowWorkoutModal] = useState(false);
@@ -1579,6 +2088,8 @@ export default function App() {
                 setUser(data.user);
                 setApiChallenges(data.challenges);
                 setAchievements(data.achievements);
+                setLeaderboardEntries(data.leaderboard);
+                setMyLeaderboardRank(data.myLeaderboardRank);
                 setDashboardMode(data.mode);
                 if (data.mode === "telegram") {
                     if (telegram.initData) {
@@ -1658,6 +2169,8 @@ export default function App() {
                     const demo = createDemoDashboard(failureUser ?? undefined, reason.mode);
                     setApiChallenges(demo.challenges);
                     setAchievements(demo.achievements);
+                    setLeaderboardEntries([]);
+                    setMyLeaderboardRank(null);
                     setDashboardMode(reason.mode);
                     setWeeklyWorkouts(readDemoWorkouts());
                 } else {
@@ -1671,6 +2184,8 @@ export default function App() {
                     const demo = createDemoDashboard(undefined, "api-error");
                     setApiChallenges(demo.challenges);
                     setAchievements(demo.achievements);
+                    setLeaderboardEntries([]);
+                    setMyLeaderboardRank(null);
                 }
                 setError(
                     reason instanceof Error
@@ -1689,6 +2204,22 @@ export default function App() {
             window.clearInterval(timer);
         };
     }, [authRetryNonce]);
+
+    useEffect(() => {
+        if (loading || !user) return;
+        if (
+            dashboardMode === "api-error" ||
+            dashboardMode === "telegram-error"
+        ) {
+            return;
+        }
+
+        const timer = window.setTimeout(
+            () => setShowStartupGreeting(false),
+            1450
+        );
+        return () => window.clearTimeout(timer);
+    }, [dashboardMode, loading, user]);
 
     const challenges = useMemo(
         () =>
@@ -1805,22 +2336,7 @@ export default function App() {
             ),
         [viewGameUser.achievements]
     );
-    const leaderboardScores = useMemo(() => {
-        const pullups =
-            viewGameUser.challenges["подтягивания"].monthlyScore;
-        const pushups =
-            viewGameUser.challenges["отжимания"].monthlyScore;
-        const plank = viewGameUser.challenges["планка"].monthlyScore;
-        const running = viewGameUser.challenges["бег"].monthlyScore;
-        return {
-            overall: pullups + pushups + plank + running,
-            pullups,
-            pushups,
-            plank,
-            running,
-        };
-    }, [viewGameUser.challenges]);
-
+    const ratingPlace = myLeaderboardRank?.rank ?? null;
     const baseAchievementViews = useMemo<AchievementView[]>(() => {
         if (!user) return [];
         const apiUnlocked = new Set(
@@ -2108,6 +2624,7 @@ export default function App() {
             ),
         });
         setLoading(true);
+        setShowStartupGreeting(true);
         setError(null);
         setAuthStatus("loading");
         setApiHealthStatus("not-checked");
@@ -2165,11 +2682,12 @@ export default function App() {
                 return (
                     <Dashboard
                         user={displayUser}
-                        gameUser={viewGameUser}
                         avatarUrl={avatarUrl}
                         challenges={challenges}
+                        achievementsCount={achievements.length}
+                        ratingPlace={ratingPlace}
+                        recentWorkouts={weeklyWorkouts}
                         onOpenChallenges={() => setActiveView("challenges")}
-                        onOpenWorkouts={() => setActiveView("workouts")}
                         onOpenLeaderboard={() => {
                             playOpen();
                             setActiveView("leaderboard");
@@ -2186,7 +2704,7 @@ export default function App() {
                             )
                         }
                         onOpenChallenge={setSelectedChallenge}
-                        onOpenSite={handleOpenSite}
+                        onAddWorkout={() => setShowWorkoutModal(true)}
                     />
                 );
             case "challenges":
@@ -2214,11 +2732,18 @@ export default function App() {
                 return (
                     <ProfileScreen
                         user={displayUser}
-                        gameUser={viewGameUser}
                         badges={gameBadges}
+                        challenges={challenges}
+                        achievements={achievements}
+                        workouts={weeklyWorkouts}
+                        ratingPlace={ratingPlace}
                         avatarUrl={avatarUrl}
                         onOpenAvatar={() => setShowAvatarPicker(true)}
                         onOpenSettings={() => openMenuScreen("settings")}
+                        onOpenAchievements={() => setActiveView("achievements")}
+                        onOpenLeaderboard={() => setActiveView("leaderboard")}
+                        onOpenReferrals={() => openMenuScreen("referrals")}
+                        onOpenLogout={() => openMenuScreen("logout")}
                     />
                 );
             case "leaderboard":
@@ -2226,7 +2751,9 @@ export default function App() {
                     <LeaderboardScreen
                         currentName={displayUser.display_name}
                         currentAvatarUrl={avatarUrl}
-                        currentScores={leaderboardScores}
+                        currentTelegramId={displayUser.telegram_id}
+                        entries={leaderboardEntries}
+                        myRank={myLeaderboardRank}
                     />
                 );
             case "placeholder":
@@ -2257,6 +2784,7 @@ export default function App() {
         }
     }, [
         activeView,
+        achievements,
         achievementViews,
         appSettings,
         avatarUrl,
@@ -2264,7 +2792,9 @@ export default function App() {
         dashboardMode,
         displayUser,
         gameBadges,
-        leaderboardScores,
+        leaderboardEntries,
+        myLeaderboardRank,
+        ratingPlace,
         menuScreen,
         placeholder.description,
         placeholder.title,
@@ -2399,12 +2929,7 @@ export default function App() {
     ) : null;
 
     if (loading) {
-        return (
-            <div className="app-state">
-                <div className="loader" />
-                <strong>Собираем твой прогресс</strong>
-            </div>
-        );
+        return <StartupGreeting user={user ?? backendProfile} mode="loading" />;
     }
 
     if (
@@ -2434,12 +2959,11 @@ export default function App() {
     }
 
     if (!user) {
-        return (
-            <div className="app-state">
-                <div className="loader" />
-                <strong>Открываем PULLUP</strong>
-            </div>
-        );
+        return <StartupGreeting user={null} mode="loading" />;
+    }
+
+    if (showStartupGreeting) {
+        return <StartupGreeting user={user} mode="welcome" />;
     }
 
     return (

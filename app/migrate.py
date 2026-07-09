@@ -103,7 +103,7 @@ async def verify(connection: asyncpg.Connection) -> None:
             "SELECT version FROM public.schema_migrations"
         )
     }
-    missing_versions = {"002", "003", "004", "005"} - applied
+    missing_versions = {"002", "003", "004", "005", "006"} - applied
     if missing_versions:
         raise RuntimeError(
             "Required migrations are not recorded: "
@@ -146,7 +146,7 @@ async def verify(connection: asyncpg.Connection) -> None:
     if not xp_index:
         raise RuntimeError("XP reward idempotency index is missing")
 
-    print("Migrations 002, 003, 004, and 005 are applied")
+    print("Migrations 002, 003, 004, 005, and 006 are applied")
     print("Submission type constraint is valid")
     print("Submission token idempotency index exists")
     print("XP reward idempotency index exists")
