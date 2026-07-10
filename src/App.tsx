@@ -955,7 +955,9 @@ function ChallengesScreen({
 }) {
     const [filter, setFilter] = useState<"active" | "done">("active");
     const visible = challenges.filter((item) =>
-        filter === "done" ? percent(item) >= 100 : percent(item) < 100
+        filter === "done"
+            ? Boolean(item.userCompleted ?? item.completed)
+            : item.is_active !== false
     );
 
     return (

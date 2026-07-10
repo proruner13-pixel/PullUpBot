@@ -34,9 +34,18 @@ export interface ApiUser {
 }
 
 export interface ApiChallenge {
+    id?: number;
+    slug?: string;
+    title?: string;
+    description?: string | null;
     exercise: string;
     progress: number;
     goal: number;
+    reward_tokens?: number;
+    is_active?: boolean;
+    status?: "active" | "completed" | "inactive" | string;
+    completed?: boolean;
+    userCompleted?: boolean;
     xp: number;
     level: number;
     next_level_progress: number;
@@ -142,6 +151,106 @@ function telegramUserToApiUser(
         streak_days: 0,
         referrals_count: 0,
     };
+}
+
+function numberFrom(value: unknown, fallback = 0): number {
+    const numeric = Number(value);
+    return Number.isFinite(numeric) ? numeric : fallback;
+}
+
+function stringFrom(value: unknown, fallback = ""): string {
+    return typeof value === "string" ? value : fallback;
+}
+
+const EXERCISE_ALIASES: Record<string, string> = {
+    pullup: "pullups",
+    pull_ups: "pullups",
+    pullups: "pullups",
+    pushup: "pushups",
+    push_ups: "pushups",
+    pushups: "pushups",
+    plank: "plank",
+    run: "running",
+    running: "running",
+    running_km: "running",
+};
+
+function normalizeExerciseType(value: string): string {
+    const normalized = value.trim().toLowerCase();
+    return EXERCISE_ALIASES[normalized] ?? normalized;
+}
+
+function boolFrom(value: unknown, fallback = false): boolean {
+    return typeof value === "boolean" ? value : fallback;
+}
+
+function recordFrom(value: unknown): Record<string, unknown> {
+    return value && typeof value === "object"
+        ? value as Record<string, unknown>
+        : {};
+}
+
+export function normalizeChallenge(raw: unknown): ApiChallenge {
+    const record = recordFrom(raw);
+    const isActive = boolFrom(record.is_active ?? record.active, true);
+    const completed = boolFrom(
+        record.user_completed ?? record.completed,
+        false
+    );
+    const status = stringFrom(
+        record.status,
+        isActive ? "active" : "inactive"
+    );
+    const exercise = normalizeExerciseType(stringFrom(
+        record.exercise ??
+            record.exercise_type ??
+            record.exerciseType ??
+            record.type ??
+            record.slug,
+        ""
+    ));
+
+    return {
+        id: record.id === undefined ? undefined : numberFrom(record.id),
+        slug: stringFrom(record.slug, exercise),
+        title: stringFrom(record.title ?? record.name, exercise),
+        description:
+            typeof record.description === "string"
+                ? record.description
+                : null,
+        exercise,
+        progress: numberFrom(
+            record.progress ??
+                record.current_progress ??
+                record.user_progress,
+            0
+        ),
+        goal: numberFrom(
+            record.goal ??
+                record.target ??
+                record.target_value ??
+                record.targetValue,
+            0
+        ),
+        reward_tokens: numberFrom(
+            record.reward_tokens ?? record.rewardTokens,
+            0
+        ),
+        is_active: isActive,
+        status: completed ? "completed" : status,
+        completed,
+        userCompleted: completed,
+        xp: numberFrom(record.xp, 0),
+        level: numberFrom(record.level, 1),
+        next_level_progress: numberFrom(
+            record.next_level_progress ?? record.nextLevelProgress,
+            0
+        ),
+    };
+}
+
+function normalizeChallenges(raw: unknown): ApiChallenge[] {
+    return Array.isArray(raw) ? raw.map(normalizeChallenge) : [];
 }
 
 export async function getTelegramWebAppData(): Promise<TelegramWebAppData> {
@@ -270,19 +379,16 @@ export async function fetchDashboard(
         }
 
         const [
-            challenges,
+            rawChallenges,
             achievements,
             leaderboardAround,
             myLeaderboardRank,
         ] = await Promise.all([
-            apiRequest<ApiChallenge[]>(
+            apiRequest<unknown>(
                 "/api/challenges",
                 { method: "GET" },
                 telegram.initData
-            ).catch((err) => {
-                if (import.meta.env.DEV) console.warn("[DEV] /api/challenges failed:", err);
-                return [] as ApiChallenge[];
-            }),
+            ),
             apiRequest<ApiAchievement[]>(
                 "/api/achievements",
                 { method: "GET" },
@@ -300,32 +406,31 @@ export async function fetchDashboard(
                 return null as MyLeaderboardRankDto | null;
             }),
         ]);
+        console.log(
+            "[CHALLENGES] raw count:",
+            Array.isArray(rawChallenges) ? rawChallenges.length : 0
+        );
+        console.log("[CHALLENGES] raw:", rawChallenges);
+        const challenges = normalizeChallenges(rawChallenges);
+        const activeChallenges = challenges.filter(
+            (challenge) =>
+                challenge.status === "active" && !challenge.userCompleted
+        );
+        const completedChallenges = challenges.filter(
+            (challenge) => Boolean(challenge.userCompleted)
+        );
+        console.log("[CHALLENGES] normalized count:", challenges.length);
+        console.log("[CHALLENGES] normalized:", challenges);
+        console.log("[CHALLENGES] rendered active:", activeChallenges);
+        console.log("[CHALLENGES] completed:", completedChallenges);
         console.info("[TelegramAuth] backend dashboard response", {
             challenges: challenges.length,
             achievements: achievements.length,
         });
 
-        // Fallback: if backend returned empty challenges, use demo set
-        const finalChallenges = (challenges && challenges.length > 0)
-            ? challenges
-            : (import.meta.env.DEV ? [] : undefined) ?? [];
-
-        if ((finalChallenges as ApiChallenge[]).length === 0) {
-            // prefer demo challenges when backend empty or failed
-            const demo = createDemoDashboard(telegram.user ?? undefined, "telegram");
-            return {
-                user: authenticatedUser,
-                challenges: demo.challenges,
-                achievements: achievements && achievements.length > 0 ? achievements : demo.achievements,
-                leaderboard: leaderboardAround.items,
-                myLeaderboardRank,
-                mode: "telegram",
-            };
-        }
-
         return {
             user: authenticatedUser,
-            challenges: finalChallenges as ApiChallenge[],
+            challenges,
             achievements,
             leaderboard: leaderboardAround.items,
             myLeaderboardRank,
