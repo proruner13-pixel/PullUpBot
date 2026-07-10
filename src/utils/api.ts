@@ -377,6 +377,8 @@ export async function fetchDashboard(
             console.log("[DEV] Telegram user from WebApp:", telegram.user);
             console.log("[DEV] API URL:", getApiUrl());
         }
+        console.log("[API] base URL:", getApiUrl());
+        console.log("[CHALLENGES] auth user:", authenticatedUser);
 
         const [
             rawChallenges,

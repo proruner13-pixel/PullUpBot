@@ -12,7 +12,7 @@ export interface SubmissionResponse {
     value: number;
     video_file_id: string | null;
     video_url: string | null;
-    status: "pending" | "approved" | "rejected";
+    status: "pending" | "approved" | "rejected" | "completed";
     moderator_comment: string | null;
     created_at: string;
     reviewed_at: string | null;

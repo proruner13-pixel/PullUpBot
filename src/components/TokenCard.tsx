@@ -19,7 +19,15 @@ export default function TokenCard({ earnedTokens, tokenGoal }: TokenCardProps) {
                 onClick={handleOpen}
                 className="bg-gradient-to-r from-purple-700 to-indigo-600 p-4 rounded-2xl shadow-md w-full max-w-4xl flex flex-col items-center gap-2 cursor-pointer hover:scale-105 transform transition"
             >
-                <h2 className="text-xl font-bold text-white">💰 Твои токены</h2>
+                <h2 className="text-xl font-bold text-white flex items-center gap-2">
+                    <img
+                        className="pullup-coin-icon"
+                        src="/assets/home/pullup-coin.png"
+                        alt=""
+                        aria-hidden="true"
+                    />
+                    Твои токены
+                </h2>
                 <div className="w-full bg-gray-600 rounded-full h-4 mb-2">
                     <div
                         className="bg-purple-400 h-4 rounded-full transition-all duration-500"
@@ -33,7 +41,15 @@ export default function TokenCard({ earnedTokens, tokenGoal }: TokenCardProps) {
             {isModalOpen && (
                 <div className="fixed inset-0 bg-black bg-opacity-70 flex justify-center items-center z-50">
                     <div className="bg-gray-800 p-6 rounded-2xl shadow-xl w-96 text-center">
-                        <h2 className="text-xl font-bold text-white mb-4">💰 PULLUP Токены</h2>
+                        <h2 className="text-xl font-bold text-white mb-4 flex items-center justify-center gap-2">
+                            <img
+                                className="pullup-coin-icon"
+                                src="/assets/home/pullup-coin.png"
+                                alt=""
+                                aria-hidden="true"
+                            />
+                            PULLUP Токены
+                        </h2>
                         <p className="text-white mb-2">
                             Попавшие в топ за месяц по своим видам спорта (подтягивания, отжимания, планка, бег)
                             получают PULLUP токены на свой Telegram-кошелек.

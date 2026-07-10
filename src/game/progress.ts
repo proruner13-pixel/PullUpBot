@@ -164,7 +164,7 @@ export const ACHIEVEMENTS: Achievement[] = [
     {
         id: "token_1000",
         title: "Копилка",
-        icon: "💰",
+        icon: "/assets/home/pullup-coin.png",
         description: "Накопить 1000 PULLUP",
         condition: (user) => user.tokens >= 1000,
     },

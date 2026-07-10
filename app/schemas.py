@@ -7,6 +7,9 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 class HealthResponse(BaseModel):
     status: str
     database: str
+    database_connected: bool | None = None
+    active_challenges_count: int | None = None
+    active_challenge_slugs: list[str] | None = None
 
 
 class UserResponse(BaseModel):
@@ -23,12 +26,20 @@ class UserResponse(BaseModel):
 
 
 class ChallengeResponse(BaseModel):
+    id: int | None = None
+    slug: str | None = None
+    title: str | None = None
+    description: str | None = None
     exercise: str
     progress: int
     goal: int
+    reward_tokens: int = 0
+    is_active: bool = True
     xp: int
     level: int
     next_level_progress: int
+    completed: bool = False
+    status: str = "active"
 
 
 class AchievementResponse(BaseModel):

@@ -6,9 +6,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
 import logging
+from urllib.parse import urlsplit
 
 from app.config import Settings
 from app.database import Database
+from app.repositories.challenges import list_active_catalog
 from app.routers import (
     achievements,
     auth,
@@ -22,6 +24,14 @@ from app.routers import (
 from app.schema_validation import SchemaMismatchError, validate_required_schema
 
 logger = logging.getLogger("pullup.api")
+
+
+def _database_log_parts(database_dsn: str) -> tuple[str, str]:
+    try:
+        parsed = urlsplit(database_dsn)
+    except ValueError:
+        return "<invalid>", "<invalid>"
+    return parsed.hostname or "<unknown>", parsed.path.lstrip("/") or "<unknown>"
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -38,6 +48,21 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             async with database.connection() as connection:
                 await validate_required_schema(connection)
+                active_challenges = await list_active_catalog(connection)
+                database_host, database_name = _database_log_parts(
+                    app_settings.database_dsn
+                )
+                active_slugs = [row["slug"] for row in active_challenges]
+                logger.info(
+                    "DATABASE_CONFIG host=%s database=%s",
+                    database_host,
+                    database_name,
+                )
+                logger.info(
+                    "CHALLENGES_DB_CHECK count=%s slugs=[%s]",
+                    len(active_slugs),
+                    ",".join(active_slugs),
+                )
             yield
         except SchemaMismatchError:
             logger.exception("DATABASE_SCHEMA_MISMATCH")

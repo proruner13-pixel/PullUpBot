@@ -39,7 +39,9 @@ ranked_users AS (
         users.first_name,
         users.avatar_url,
         GREATEST(COALESCE(users.total_xp, 0), COALESCE(users.xp, 0))::INTEGER AS xp,
-        COALESCE(users.level, 1)::INTEGER AS level,
+        (
+            GREATEST(COALESCE(users.total_xp, 0), COALESCE(users.xp, 0)) / 1000
+        + 1)::INTEGER AS level,
         COALESCE(users.tokens, 0)::INTEGER AS balance,
         (
             COALESCE(approved_submissions.approved_count, 0) +

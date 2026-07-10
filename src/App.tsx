@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo,useRef, useState, type CSSProperties } from "react";
+import { useCallback, useEffect, useMemo,useRef, useState, type CSSProperties, type ReactNode } from "react";
 import { AnimatePresence, motion } from "framer-motion";
 import {
     Activity,
@@ -6,7 +6,6 @@ import {
     CalendarDays,
     Check,
     ChevronRight,
-    Coins as CoinsIcon,
     Copy,
     Dumbbell,
     Flame,
@@ -89,14 +88,14 @@ import {
     type User as GameUser,
 } from "./game/progress";
 import {
-    LEVEL_XP_STEP,
+    XP_PER_LEVEL,
     calculateLevel,
     calculateProgress,
     calculatePullupReward,
     calculateXp,
+    getLevelTitle,
     normalizeEconomyActivity,
 } from "./game/economy";
-import { createDemoDashboard } from "./mocks/data";
 import {
     resetDemoProgress as resetStoredDemoProgress,
     type LeaderboardAroundEntryDto,
@@ -152,7 +151,7 @@ interface WorkoutEntry {
     value: number;
     tokens: number;
     xp: number;
-    status: "pending" | "approved" | "rejected";
+    status: "pending" | "approved" | "rejected" | "completed";
 }
 
 interface WorkoutTypeSummary {
@@ -189,7 +188,7 @@ function gameChallengesToApi(user: GameUser): ApiChallenge[] {
         goal: challenge.goal,
         xp: challenge.xp,
         level: challenge.level,
-        next_level_progress: challenge.xp % LEVEL_XP_STEP,
+        next_level_progress: challenge.xp % XP_PER_LEVEL,
     }));
 }
 
@@ -197,7 +196,7 @@ type ChallengeVisual = {
     label: string;
     shortLabel: string;
     color: string;
-    icon: string;
+    image: string;
     reward: number;
 };
 
@@ -206,28 +205,28 @@ const CHALLENGE_VISUALS: Record<string, ChallengeVisual> = {
         label: "Ежедневный воркаут",
         shortLabel: "Подтягивания",
         color: "#71e45b",
-        icon: "🏋️",
+        image: "/assets/workouts/pullups.png",
         reward: 200,
     },
     pushups: {
         label: "Отжимания мастер",
         shortLabel: "Отжимания",
         color: "#55a8ff",
-        icon: "💪",
+        image: "/assets/workouts/pushups.png",
         reward: 400,
     },
     plank: {
         label: "Планка про",
         shortLabel: "Планка",
         color: "#d86cff",
-        icon: "🧘",
+        image: "/assets/workouts/plank.png",
         reward: 300,
     },
     running: {
         label: "Сила недели",
         shortLabel: "Бег",
         color: "#ff9e45",
-        icon: "🏃",
+        image: "/assets/workouts/running.png",
         reward: 500,
     },
 };
@@ -242,6 +241,30 @@ const WORKOUT_TYPE_META: Record<
     plank: { label: "Планка", color: "#d86cff" },
 };
 
+function visualForWorkoutType(type: WorkoutType): ChallengeVisual {
+    if (type === "run") return CHALLENGE_VISUALS.running;
+    if (type === "plank") return CHALLENGE_VISUALS.plank;
+    if (type === "pushup") return CHALLENGE_VISUALS.pushups;
+    return CHALLENGE_VISUALS.pullups;
+}
+
+function WorkoutImage({
+    visual,
+    className = "",
+}: {
+    visual: ChallengeVisual;
+    className?: string;
+}) {
+    return (
+        <img
+            className={`workout-image ${className}`.trim()}
+            src={visual.image}
+            alt={visual.shortLabel}
+            loading="lazy"
+        />
+    );
+}
+
 const NAV_ITEMS: Array<{
     id: Tab;
     label: string;
@@ -250,7 +273,7 @@ const NAV_ITEMS: Array<{
     { id: "home", label: "Главная", icon: Home },
     { id: "challenges", label: "Челленджи", icon: Trophy },
     { id: "workouts", label: "Тренировки", icon: Dumbbell },
-    { id: "achievements", label: "Достижения", icon: Award },
+    { id: "achievements", label: "Достижения", icon: Medal },
     { id: "profile", label: "Профиль", icon: UserRound },
 ];
 
@@ -260,22 +283,17 @@ function percent(challenge: ApiChallenge): number {
 }
 
 function levelProgress(xp: number): number {
-    return Math.max(0, xp % LEVEL_XP_STEP);
+    return Math.max(0, xp % XP_PER_LEVEL);
 }
 
 function apiLevelProgress(value: number | undefined, xp: number): number {
     return value ?? levelProgress(xp);
 }
 
-const PROFILE_LEVEL_MILESTONES = [100, 300, 600, 1000, 1500, 2000, 3000];
-
-function athleteTitle(level: number): string {
-    if (level >= 20) return "Легенда";
-    if (level >= 15) return "Чемпион";
-    if (level >= 10) return "Мастер";
-    if (level >= 5) return "Атлет";
-    return "Новичок";
-}
+const PROFILE_LEVEL_MILESTONES = Array.from(
+    { length: 7 },
+    (_, index) => (index + 1) * XP_PER_LEVEL
+);
 
 function profileChallengeValue(
     challenges: ApiChallenge[],
@@ -316,7 +334,7 @@ function formatWorkoutValue(type: WorkoutType, value: number): string {
 }
 
 function workoutStatusLabel(status: WorkoutEntry["status"]): string {
-    if (status === "approved") return "Одобрено";
+    if (status === "approved" || status === "completed") return "Одобрено";
     if (status === "rejected") return "Отклонено";
     return "На проверке";
 }
@@ -382,17 +400,49 @@ function calculateWorkoutXp(tokens: number): number {
     return calculateXp(tokens);
 }
 
-function submissionToWorkout(submission: SubmissionResponse): WorkoutEntry | null {
-    const type = normalizeWorkoutType(submission.type);
+function workoutRecord(raw: unknown): Record<string, unknown> {
+    return raw && typeof raw === "object" ? Object(raw) : {};
+}
+
+function normalizeWorkout(raw: SubmissionResponse | Record<string, unknown>): WorkoutEntry | null {
+    const record = workoutRecord(raw);
+    const rawType =
+        record.exercise_type ??
+        record.type ??
+        record.workout_type;
+    const type = typeof rawType === "string" ? normalizeWorkoutType(rawType) : null;
     if (!type) return null;
-    const tokens = calculateWorkoutTokens(type, submission.value);
+    const rawValue =
+        record.value ??
+        record.count ??
+        record.amount ??
+        record.distance ??
+        record.duration;
+    const value = Number(rawValue ?? 0);
+    const safeValue = Number.isFinite(value) ? value : 0;
+    const rawStatus = record.status;
+    const status =
+        rawStatus === "pending" ||
+        rawStatus === "approved" ||
+        rawStatus === "rejected" ||
+        rawStatus === "completed"
+            ? rawStatus
+            : "approved";
+    const createdAt =
+        record.created_at ??
+        record.completed_at ??
+        record.date;
+    const tokens = calculateWorkoutTokens(type, safeValue);
     return {
         type,
-        date: submission.reviewed_at ?? submission.created_at,
-        value: submission.value,
+        date:
+            typeof createdAt === "string"
+                ? createdAt
+                : new Date().toISOString(),
+        value: safeValue,
         tokens,
         xp: calculateWorkoutXp(tokens),
-        status: submission.status,
+        status,
     };
 }
 
@@ -589,7 +639,7 @@ function ChallengeCard({
             onClick={onClick}
         >
             <div className="challenge-emblem" aria-hidden="true">
-                <span>{visual.icon}</span>
+                <WorkoutImage visual={visual} />
             </div>
             <div className="challenge-body">
                 <div className="challenge-heading">
@@ -604,7 +654,15 @@ function ChallengeCard({
                                   : "раз"}
                         </p>
                     </div>
-                    <span className="reward">+{visual.reward} 🪙</span>
+                    <span className="reward">
+                        +{visual.reward}
+                        <img
+                            className="pullup-coin-icon"
+                            src="/assets/home/pullup-coin.png"
+                            alt=""
+                            aria-hidden="true"
+                        />
+                    </span>
                 </div>
                 <div className="progress-track">
                     <motion.div
@@ -616,7 +674,7 @@ function ChallengeCard({
                 <div className="challenge-meta">
                     <span className="text-xs text-muted">{value}% выполнено</span>
                     <span className="text-xs text-muted">
-                        Уровень {challenge.level} · {apiLevelProgress(challenge.next_level_progress, challenge.xp)} / {LEVEL_XP_STEP} XP
+                        Уровень {challenge.level} · {apiLevelProgress(challenge.next_level_progress, challenge.xp)} / {XP_PER_LEVEL} XP
                     </span>
                 </div>
             </div>
@@ -678,6 +736,7 @@ function Dashboard({
     onOpenNotifications,
     onOpenChallenge,
     onAddWorkout,
+    onOpenSite,
 }: {
     user: ApiUser;
     avatarUrl: string;
@@ -692,14 +751,8 @@ function Dashboard({
     onOpenNotifications: () => void;
     onOpenChallenge: (challenge: ApiChallenge) => void;
     onAddWorkout: () => void;
+    onOpenSite: () => void;
 }) {
-    const nearest =
-        [...challenges]
-            .filter((item) => percent(item) < 100)
-            .sort((a, b) => percent(b) - percent(a))[0] ?? challenges[0];
-    const challengeVisual = nearest
-        ? CHALLENGE_VISUALS[nearest.exercise] ?? CHALLENGE_VISUALS.pullups
-        : CHALLENGE_VISUALS.pullups;
     const firstName =
         user.first_name ||
         user.display_name.split(" ")[0] ||
@@ -721,13 +774,13 @@ function Dashboard({
             challenges.find((challenge) => challenge.exercise === "running")
                 ?.progress ?? 0,
     };
-    const recent = [...recentWorkouts]
-        .sort(
-            (a, b) =>
-                new Date(b.date).getTime() - new Date(a.date).getTime()
+    const todayTokens = recentWorkouts
+        .filter(
+            (workout) =>
+                workout.status === "approved" &&
+                toDayKey(new Date(workout.date)) === toDayKey(new Date())
         )
-        .slice(0, 3);
-
+        .reduce((sum, workout) => sum + workout.tokens, 0);
     return (
         <>
             <div className="topbar home-topbar">
@@ -760,7 +813,9 @@ function Dashboard({
                 </button>
                 <div className="home-profile-main">
                     <h1>Привет, {firstName}! 👋</h1>
-                    <span>Уровень {levelState.level} · Атлет</span>
+                    <span>
+                        Уровень {levelState.level} · {getLevelTitle(levelState.level)}
+                    </span>
                     <div className="home-xp-line">
                         <strong>{currentXp.toLocaleString("ru-RU")}</strong>
                         <span>/ {levelState.nextLevelXp.toLocaleString("ru-RU")} XP</span>
@@ -773,89 +828,82 @@ function Dashboard({
                         {levelState.xpToNextLevel.toLocaleString("ru-RU")} XP
                     </small>
                 </div>
-                <div className="home-trophy">
-                    <Trophy size={44} />
-                </div>
+                <img
+                    className="home-hero-runner"
+                    src="/assets/home/hero-runner.png"
+                    alt=""
+                    aria-hidden="true"
+                />
             </section>
 
-            <section className="pullup-balance-card" aria-label="Баланс PULLUP">
-                <div className="pullup-coin">P</div>
-                <div>
+            <section
+                className="pullup-balance-card"
+                aria-label={`Баланс PULLUP: ${user.tokens.toLocaleString("ru-RU")}`}
+            >
+                <img
+                    className="pullup-balance-coin"
+                    src="/assets/home/pullup-coin.png"
+                    alt=""
+                    aria-hidden="true"
+                />
+                <div className="pullup-balance-copy">
                     <span>Баланс</span>
                     <strong>
-                        <AnimatedNumber value={user.tokens} />
+                        {user.tokens.toLocaleString("ru-RU")}
                         <small>PULLUP</small>
                     </strong>
+                    <div className="pullup-balance-today">
+                        <span>Получено сегодня</span>
+                        <b>{todayTokens.toLocaleString("ru-RU")} PULLUP</b>
+                    </div>
                 </div>
-                <CoinsIcon />
-                <ChevronRight size={22} />
             </section>
 
             <section className="home-quick-stats">
-                <button>
+                <button className="home-quick-card home-quick-card--streak">
+                    <img src="/assets/home/streak-runner.png" alt="" />
                     <Flame size={23} />
                     <span>Серия</span>
                     <strong>{user.streak_days}</strong>
                     <small>дней</small>
                 </button>
-                <button onClick={onOpenLeaderboard}>
+                <button
+                    className="home-quick-card home-quick-card--rating"
+                    onClick={onOpenLeaderboard}
+                >
+                    <img src="/assets/home/rating-trophy.png" alt="" />
                     <Trophy size={23} />
                     <span>Рейтинг</span>
                     <strong>{ratingPlace ? `#${ratingPlace}` : "—"}</strong>
                     <small>в общем зачёте</small>
                 </button>
-                <button onClick={onAddWorkout}>
-                    <Zap size={23} />
-                    <span>Активности</span>
-                    <strong>{recentWorkouts.length}</strong>
-                    <small>тренировок</small>
-                </button>
-                <button onClick={onOpenChallenges}>
-                    <Award size={23} />
-                    <span>Достижения</span>
-                    <strong>{achievementsCount}</strong>
-                    <small>получено</small>
-                </button>
             </section>
 
-            {nearest && (
-                <section
-                    className="daily-challenge-card"
-                    style={{ "--accent": challengeVisual.color } as CSSProperties}
-                >
-                    <div className="daily-challenge-copy">
-                        <span>🔥 Сегодняшний челлендж</span>
-                        <h2>{challengeVisual.shortLabel}</h2>
-                        <p>
-                            <strong>{nearest.progress.toLocaleString("ru-RU")}</strong>
-                            {" / "}
-                            {nearest.goal.toLocaleString("ru-RU")}{" "}
-                            {nearest.exercise === "running"
-                                ? "км"
-                                : nearest.exercise === "plank"
-                                  ? "сек"
-                                  : "повторений"}
-                        </p>
-                        <div className="daily-progress">
-                            <div style={{ width: `${percent(nearest)}%` }} />
-                        </div>
-                        <small>
-                            Осталось{" "}
-                            {Math.max(nearest.goal - nearest.progress, 0).toLocaleString("ru-RU")}
-                        </small>
-                    </div>
-                    <div className="daily-visual">
-                        <span>{challengeVisual.icon}</span>
-                    </div>
-                    <button
-                        className="daily-reward"
-                        onClick={() => onOpenChallenge(nearest)}
-                    >
-                        <small>Награда</small>
-                        <strong>+{challengeVisual.reward} PULLUP</strong>
-                    </button>
-                </section>
-            )}
+            <section className="home-total-stats panel">
+                <h2>Твоя статистика</h2>
+                <div>
+                    <article>
+                        <WorkoutImage visual={CHALLENGE_VISUALS.pullups} />
+                        <strong>{stats.pullups.toLocaleString("ru-RU")}</strong>
+                        <small>Подтягивания</small>
+                    </article>
+                    <article>
+                        <WorkoutImage visual={CHALLENGE_VISUALS.pushups} />
+                        <strong>{stats.pushups.toLocaleString("ru-RU")}</strong>
+                        <small>Отжимания</small>
+                    </article>
+                    <article>
+                        <WorkoutImage visual={CHALLENGE_VISUALS.plank} />
+                        <strong>{stats.plank.toLocaleString("ru-RU")} сек</strong>
+                        <small>Планка</small>
+                    </article>
+                    <article>
+                        <WorkoutImage visual={CHALLENGE_VISUALS.running} />
+                        <strong>{stats.running.toLocaleString("ru-RU")} км</strong>
+                        <small>Бег</small>
+                    </article>
+                </div>
+            </section>
 
             <button className="home-action-button" onClick={onAddWorkout}>
                 <Video size={30} fill="currentColor" />
@@ -866,91 +914,31 @@ function Dashboard({
                 <ChevronRight size={24} />
             </button>
 
-            <section className="home-total-stats panel">
-                <h2>Твоя статистика</h2>
-                <div>
-                    <article>
-                        <span>🏋️</span>
-                        <strong>{stats.pullups.toLocaleString("ru-RU")}</strong>
-                        <small>подтягиваний</small>
-                    </article>
-                    <article>
-                        <span>💪</span>
-                        <strong>{stats.pushups.toLocaleString("ru-RU")}</strong>
-                        <small>отжиманий</small>
-                    </article>
-                    <article>
-                        <span>🧘</span>
-                        <strong>{stats.plank.toLocaleString("ru-RU")}</strong>
-                        <small>сек планки</small>
-                    </article>
-                    <article>
-                        <span>🏃</span>
-                        <strong>{stats.running.toLocaleString("ru-RU")}</strong>
-                        <small>км бег</small>
-                    </article>
-                </div>
-            </section>
-
-            <section className="recent-workouts-card panel">
-                <div className="recent-workouts-head">
-                    <h2>Последние тренировки</h2>
-                    <button onClick={onAddWorkout}>
-                        Все <ChevronRight size={16} />
-                    </button>
-                </div>
-                {recent.length ? (
-                    <div className="recent-workout-list">
-                        {recent.map((workout, index) => {
-                            const meta = WORKOUT_TYPE_META[workout.type];
-                            return (
-                                <article key={`${workout.date}-${index}`}>
-                                    <div
-                                        className="recent-workout-thumb"
-                                        style={{ "--accent": meta.color } as CSSProperties}
-                                    >
-                                        <span>
-                                            {workout.type === "run"
-                                                ? "🏃"
-                                                : workout.type === "plank"
-                                                  ? "🧘"
-                                                  : workout.type === "pushup"
-                                                    ? "💪"
-                                                    : "🏋️"}
-                                        </span>
-                                    </div>
-                                    <div>
-                                        <strong>{meta.label}</strong>
-                                        <span>
-                                            {formatWorkoutValue(workout.type, workout.value)} ·{" "}
-                                            +{workout.tokens} PULLUP · +{workout.xp} XP
-                                        </span>
-                                        <small>
-                                            {formatRelativeWorkoutDate(workout.date)}
-                                        </small>
-                                    </div>
-                                    <b className={`workout-status ${workout.status}`}>
-                                        {workoutStatusLabel(workout.status)}
-                                    </b>
-                                </article>
-                            );
-                        })}
-                    </div>
-                ) : (
-                    <div className="home-empty-recent">
-                        Последние тренировки появятся после одобрения модератором
-                    </div>
-                )}
-            </section>
+            <button className="project-site-card home-site-card" onClick={onOpenSite}>
+                <span className="project-site-card__icon" aria-hidden="true">
+                    🌐
+                </span>
+                <span>
+                    <strong>Официальный сайт PULLUP</strong>
+                    <small>Новости, рейтинг, статистика и развитие проекта</small>
+                </span>
+                <ChevronRight size={22} />
+            </button>
         </>
     );
 }
 
 function ChallengesScreen({
     challenges,
+    loading,
+    error,
+    onRetry,
     onOpenChallenge,
 }: {
     challenges: ApiChallenge[];
+    loading: boolean;
+    error: string | null;
+    onRetry: () => void;
     onOpenChallenge: (challenge: ApiChallenge) => void;
 }) {
     const [filter, setFilter] = useState<"active" | "done">("active");
@@ -978,10 +966,24 @@ function ChallengesScreen({
                 </button>
             </div>
             <div className="card-list">
-                {visible.length ? (
+                {loading ? (
+                    <div className="startup-loader">
+                        <i />
+                    </div>
+                ) : error ? (
+                    <EmptyState
+                        icon={ShieldCheck}
+                        title="Не удалось загрузить данные"
+                        text={error}
+                    >
+                        <button className="primary-action" onClick={onRetry}>
+                            Повторить
+                        </button>
+                    </EmptyState>
+                ) : visible.length ? (
                     visible.map((item) => (
                         <ChallengeCard
-                            key={item.exercise}
+                            key={item.id ?? item.exercise}
                             challenge={item}
                             onClick={() => onOpenChallenge(item)}
                         />
@@ -1005,10 +1007,16 @@ function ChallengesScreen({
 function WorkoutsScreen({
     challenges,
     workouts,
+    loading,
+    error,
+    onRetry,
     onAdd,
 }: {
     challenges: ApiChallenge[];
     workouts: WorkoutEntry[];
+    loading: boolean;
+    error: string | null;
+    onRetry: () => void;
     onAdd: () => void;
 }) {
     const [selectedDayKey, setSelectedDayKey] = useState<string | null>(null);
@@ -1026,8 +1034,23 @@ function WorkoutsScreen({
     return (
         <>
             <ScreenHeader title="Тренировки" eyebrow="История прогресса" />
+            {loading ? (
+                <div className="startup-loader">
+                    <i />
+                </div>
+            ) : error ? (
+                <EmptyState
+                    icon={ShieldCheck}
+                    title="Не удалось загрузить данные"
+                    text={error}
+                >
+                    <button className="primary-action" onClick={onRetry}>
+                        Повторить
+                    </button>
+                </EmptyState>
+            ) : null}
             <div className="workout-list">
-                {challenges
+                {!loading && !error && challenges
                     .map((challenge, index) => {
                         const visual =
                             CHALLENGE_VISUALS[challenge.exercise] ??
@@ -1044,7 +1067,7 @@ function WorkoutsScreen({
                                     className="workout-icon"
                                     style={{ color: visual.color }}
                                 >
-                                    {visual.icon}
+                                    <WorkoutImage visual={visual} />
                                 </span>
                                 <div>
                                     <strong>{visual.shortLabel}</strong>
@@ -1226,7 +1249,7 @@ function ProfileScreen({
         user.username ||
         `Telegram ${user.telegram_id}`;
     const levelState = calculateProgress(user.total_xp);
-    const title = athleteTitle(levelState.level);
+    const title = getLevelTitle(levelState.level);
     const progress = levelState.progressPercent;
     const xpToNext = levelState.xpToNextLevel;
     const pullups = profileChallengeValue(challenges, "pullups");
@@ -1236,6 +1259,12 @@ function ProfileScreen({
     const activeWorkoutDays = new Set(
         workouts.map((workout) => toDayKey(new Date(workout.date)))
     ).size;
+    const approvedWorkoutCount = workouts.filter(
+        (workout) => workout.status === "approved"
+    ).length;
+    const approvalRate = workouts.length
+        ? Math.round((approvedWorkoutCount / workouts.length) * 100)
+        : 0;
     const monthXp = workouts.reduce((sum, workout) => sum + workout.xp, 0);
     const monthTokens = workouts.reduce((sum, workout) => sum + workout.tokens, 0);
     const activityValues = [
@@ -1279,25 +1308,25 @@ function ProfileScreen({
             label: "подтягиваний",
             value: pullups ? Math.min(pullups, 50).toLocaleString("ru-RU") : "0",
             color: CHALLENGE_VISUALS.pullups.color,
-            icon: CHALLENGE_VISUALS.pullups.icon,
+            visual: CHALLENGE_VISUALS.pullups,
         },
         {
             label: "отжиманий",
             value: pushups ? Math.min(pushups, 100).toLocaleString("ru-RU") : "0",
             color: CHALLENGE_VISUALS.pushups.color,
-            icon: CHALLENGE_VISUALS.pushups.icon,
+            visual: CHALLENGE_VISUALS.pushups,
         },
         {
             label: "планка",
             value: formatCompactDuration(plankSeconds),
             color: CHALLENGE_VISUALS.plank.color,
-            icon: CHALLENGE_VISUALS.plank.icon,
+            visual: CHALLENGE_VISUALS.plank,
         },
         {
             label: "бег",
             value: formatDistance(runningKm),
             color: CHALLENGE_VISUALS.running.color,
-            icon: CHALLENGE_VISUALS.running.icon,
+            visual: CHALLENGE_VISUALS.running,
         },
     ];
     const frameCards = [
@@ -1306,6 +1335,15 @@ function ProfileScreen({
         { label: "Мастер", unlocked: levelState.level >= 10, accent: "#ffd84f" },
         { label: "Чемпион", unlocked: levelState.level >= 15, accent: "#ff6f55" },
         { label: "Легенда", unlocked: levelState.level >= 20, accent: "#55d7ff" },
+    ];
+    const careerRows = [
+        ["Тренировок", workouts.length.toLocaleString("ru-RU")],
+        ["Всего подтягиваний", pullups.toLocaleString("ru-RU")],
+        ["Серия", `${user.streak_days.toLocaleString("ru-RU")} дней`],
+        ["Получено XP", user.total_xp.toLocaleString("ru-RU")],
+        ["Заработано PULLUP", user.tokens.toLocaleString("ru-RU")],
+        ["В приложении", `${activeWorkoutDays || user.streak_days} дня`],
+        ["Одобрено тренировок", `${approvalRate}%`],
     ];
 
     const copyReferral = async () => {
@@ -1316,7 +1354,25 @@ function ProfileScreen({
 
     return (
         <>
-            <ScreenHeader title="Профиль" eyebrow="Путь спортсмена" />
+            <div className="profile-mobile-topbar">
+                <span className="brand profile-mobile-brand">PULLUP<span>⚡</span></span>
+                <div className="profile-mobile-actions">
+                    <span className="profile-mobile-balance">
+                        <img
+                            className="pullup-coin-icon"
+                            src="/assets/home/pullup-coin.png"
+                            alt=""
+                            aria-hidden="true"
+                        />
+                        <b>{user.tokens.toLocaleString("ru-RU")}</b>
+                        <small>PULLUP</small>
+                    </span>
+                    <button type="button" onClick={onOpenSettings} aria-label="Меню">
+                        <Menu size={22} />
+                    </button>
+                </div>
+            </div>
+
             <section className="profile-hero-card">
                 <button
                     className="avatar avatar--large avatar-button profile-hero-avatar"
@@ -1329,50 +1385,56 @@ function ProfileScreen({
                 </button>
                 <div className="profile-hero-main">
                     <h2>{displayName}</h2>
-                    <span>
-                        <ShieldCheck size={14} /> {title}
-                    </span>
-                    <strong>Уровень {levelState.level}</strong>
+                    <strong>
+                        Уровень {levelState.level} · {title}
+                    </strong>
+                    <div className="profile-xp-row">
+                        <b>{user.total_xp.toLocaleString("ru-RU")}</b>
+                        <span>/ {levelState.nextLevelXp.toLocaleString("ru-RU")} XP</span>
+                    </div>
                     <div className="level-line profile-level-line">
                         <div style={{ width: `${progress}%` }} />
                     </div>
                     <small>
-                        {user.total_xp.toLocaleString("ru-RU")} XP · до уровня{" "}
-                        {levelState.level + 1} осталось{" "}
+                        До уровня {levelState.level + 1}:{" "}
                         {xpToNext.toLocaleString("ru-RU")} XP
                     </small>
                 </div>
-                <button
-                    className="profile-rank-badge"
-                    type="button"
-                    onClick={onOpenLeaderboard}
-                >
-                    <Trophy size={42} />
-                    <strong>{ratingPlace ? `ТОП ${ratingPlace}` : "Рейтинг"}</strong>
-                    <span>в общем зачёте</span>
-                </button>
+                <div className="profile-hero-insights">
+                    <button type="button" onClick={onOpenLeaderboard}>
+                        <Trophy size={25} />
+                        <strong>ТОП</strong>
+                        <span>{ratingPlace ? `#${ratingPlace}` : "#1"} в рейтинге</span>
+                    </button>
+                    <button type="button" onClick={onOpenSettings}>
+                        <Flame size={25} />
+                        <span>Серия</span>
+                        <strong>{user.streak_days} дней</strong>
+                        <ChevronRight size={17} />
+                    </button>
+                </div>
             </section>
 
             <section className="profile-total-stats">
                 <article>
-                    <span>{CHALLENGE_VISUALS.pullups.icon}</span>
+                    <WorkoutImage visual={CHALLENGE_VISUALS.pullups} />
                     <strong>{pullups.toLocaleString("ru-RU")}</strong>
-                    <small>подтягиваний</small>
+                    <small>Подтягиваний</small>
                 </article>
                 <article>
-                    <span>{CHALLENGE_VISUALS.pushups.icon}</span>
+                    <WorkoutImage visual={CHALLENGE_VISUALS.pushups} />
                     <strong>{pushups.toLocaleString("ru-RU")}</strong>
-                    <small>отжиманий</small>
+                    <small>Отжиманий</small>
                 </article>
                 <article>
-                    <span>{CHALLENGE_VISUALS.plank.icon}</span>
+                    <WorkoutImage visual={CHALLENGE_VISUALS.plank} />
                     <strong>{formatCompactDuration(plankSeconds)}</strong>
-                    <small>планка</small>
+                    <small>Планка</small>
                 </article>
                 <article>
-                    <span>{CHALLENGE_VISUALS.running.icon}</span>
+                    <WorkoutImage visual={CHALLENGE_VISUALS.running} />
                     <strong>{formatDistance(runningKm)}</strong>
-                    <small>бег</small>
+                    <small>Бег</small>
                 </article>
             </section>
 
@@ -1389,7 +1451,7 @@ function ProfileScreen({
                             key={record.label}
                             style={{ "--accent": record.color } as CSSProperties}
                         >
-                            <span>{record.icon}</span>
+                            <WorkoutImage visual={record.visual} />
                             <strong>{record.value}</strong>
                             <small>{record.label}</small>
                         </article>
@@ -1405,9 +1467,9 @@ function ProfileScreen({
                     </button>
                 </div>
                 <div className="athlete-path-line">
-                    {PROFILE_LEVEL_MILESTONES.map((xp, index) => {
+                    {PROFILE_LEVEL_MILESTONES.slice(0, 5).map((xp, index) => {
                         const level = index + 1;
-                        const active = user.total_xp >= xp || user.level >= level;
+                        const active = user.total_xp >= xp || levelState.level >= level;
                         const current =
                             user.total_xp < xp &&
                             (index === 0 ||
@@ -1432,118 +1494,15 @@ function ProfileScreen({
                 </div>
             </section>
 
-            <div className="profile-analytics-grid">
-                <section className="panel activity-distribution-panel">
-                    <span className="section-kicker">Распределение активности</span>
-                    <div
-                        className="activity-donut"
-                        style={
-                            {
-                                "--pullups": `${pullupShare}%`,
-                                "--pushups": `${pushupShare}%`,
-                                "--plank": `${plankShare}%`,
-                            } as CSSProperties
-                        }
-                    >
-                        <span>{activityTotal ? "XP" : "0"}</span>
-                    </div>
-                    <div className="activity-distribution-list">
-                        {activityValues.map((item) => {
-                            const share = activityTotal
-                                ? Math.round((item.value / activityTotal) * 100)
-                                : 0;
-                            return (
-                                <div key={item.label}>
-                                    <i style={{ background: item.color }} />
-                                    <strong>{share}%</strong>
-                                    <span>{item.label}</span>
-                                </div>
-                            );
-                        })}
-                    </div>
-                </section>
-
-                <section className="panel profile-season-panel">
-                    <span className="section-kicker">Сезон</span>
-                    <div>
-                        <CoinsIcon size={18} />
-                        <strong>+{monthXp.toLocaleString("ru-RU")} XP</strong>
-                        <span>за последние тренировки</span>
-                    </div>
-                    <div>
-                        <Medal size={18} />
-                        <strong>
-                            +{(monthTokens || user.tokens).toLocaleString("ru-RU")} PULLUP
-                        </strong>
-                        <span>заработано</span>
-                    </div>
-                    <div>
-                        <Dumbbell size={18} />
-                        <strong>{workouts.length}</strong>
-                        <span>тренировки</span>
-                    </div>
-                    <div>
-                        <Flame size={18} />
-                        <strong>{activeWorkoutDays || user.streak_days}</strong>
-                        <span>дней активности</span>
-                    </div>
-                </section>
-            </div>
-
-            <section className="panel profile-achievements-strip">
-                <div className="section-row">
-                    <span className="section-kicker">Мои достижения</span>
-                    <button type="button" onClick={onOpenAchievements}>
-                        Все <ChevronRight size={14} />
-                    </button>
-                </div>
-                <div>
-                    {unlockedAchievements.length ? (
-                        unlockedAchievements.slice(0, 6).map((achievement) => (
-                            <article key={achievement.code}>
-                                <b>{achievement.icon}</b>
-                                <span>{achievement.title}</span>
-                            </article>
-                        ))
-                    ) : (
-                        <p>Первые достижения откроются после тренировок.</p>
-                    )}
-                </div>
-            </section>
-
-            <section className="panel avatar-frames-panel">
-                <div className="section-row">
-                    <span className="section-kicker">Рамки аватара</span>
-                    <button type="button" onClick={onOpenAvatar}>
-                        Все рамки <ChevronRight size={14} />
-                    </button>
-                </div>
-                <div>
-                    {frameCards.map((frame, index) => (
-                        <button
-                            key={frame.label}
-                            type="button"
-                            onClick={onOpenAvatar}
-                            className={index === 0 ? "is-selected" : ""}
-                            style={{ "--accent": frame.accent } as CSSProperties}
-                        >
-                            <span>
-                                <img src={avatarUrl} alt="" />
-                                {frame.unlocked ? <Check size={13} /> : <ShieldCheck size={13} />}
-                            </span>
-                            <strong>{frame.label}</strong>
-                        </button>
-                    ))}
-                </div>
-            </section>
-
             <section className="panel referral profile-referral">
                 <div>
-                    <span className="section-kicker">Реферальная ссылка</span>
+                    <span className="section-kicker">Пригласи друзей</span>
+                    <strong>+500 PULLUP</strong>
                     <p>{referralLink}</p>
                 </div>
-                <button onClick={copyReferral} aria-label="Копировать ссылку">
-                    {copied ? <Check size={19} /> : <Copy size={19} />}
+                <button onClick={copyReferral}>
+                    {copied ? <Check size={17} /> : <Copy size={17} />}
+                    {copied ? "Скопировано" : "Скопировать ссылку"}
                 </button>
             </section>
 
@@ -1558,9 +1517,9 @@ function ProfileScreen({
                     Уведомления
                     <ChevronRight size={17} />
                 </button>
-                <button onClick={onOpenSettings}>
+                <button onClick={onOpenAchievements}>
                     <ShieldCheck size={18} />
-                    Конфиденциальность
+                    Достижения
                     <ChevronRight size={17} />
                 </button>
                 <button onClick={onOpenSettings}>
@@ -1579,6 +1538,18 @@ function ProfileScreen({
                     <ChevronRight size={17} />
                 </button>
             </section>
+
+            <section className="panel profile-career-panel">
+                <span className="section-kicker">Карьера спортсмена</span>
+                <div>
+                    {careerRows.map(([label, value]) => (
+                        <p key={label}>
+                            <span>{label}</span>
+                            <strong>{value}</strong>
+                        </p>
+                    ))}
+                </div>
+            </section>
         </>
     );
 }
@@ -1587,16 +1558,19 @@ function EmptyState({
     icon: Icon,
     title,
     text,
+    children,
 }: {
     icon: typeof Award;
     title: string;
     text: string;
+    children?: ReactNode;
 }) {
     return (
         <div className="empty-state">
             <Icon size={28} />
             <strong>{title}</strong>
             <p>{text}</p>
+            {children}
         </div>
     );
 }
@@ -1637,7 +1611,9 @@ function ChallengeDetailModal({
                 >
                     <X size={20} />
                 </button>
-                <div className="challenge-detail-emblem">{visual.icon}</div>
+                <div className="challenge-detail-emblem">
+                    <WorkoutImage visual={visual} />
+                </div>
                 <span>Активный челлендж</span>
                 <h2>{visual.label}</h2>
                 <p>
@@ -1828,7 +1804,7 @@ function AddWorkoutModal({
                                 }
                                 onClick={() => setSelected(challenge.exercise)}
                             >
-                                <span>{visual.icon}</span>
+                                <WorkoutImage visual={visual} />
                                 {visual.shortLabel}
                             </button>
                         );
@@ -1977,11 +1953,16 @@ function StartupGreeting({
                     <div className="startup-user-stats">
                         <div>
                             <Trophy size={18} />
-                            <strong>Уровень {user.level}</strong>
-                            <span>{athleteTitle(user.level)}</span>
+                            <strong>Уровень {calculateLevel(user.total_xp)}</strong>
+                            <span>{getLevelTitle(calculateLevel(user.total_xp))}</span>
                         </div>
                         <div>
-                            <CoinsIcon size={18} />
+                            <img
+                                className="pullup-coin-icon"
+                                src="/assets/home/pullup-coin.png"
+                                alt=""
+                                aria-hidden="true"
+                            />
                             <strong>{user.tokens.toLocaleString("ru-RU")}</strong>
                             <span>PULLUP</span>
                         </div>
@@ -2028,6 +2009,7 @@ export default function App() {
     const [showStartupGreeting, setShowStartupGreeting] = useState(true);
     const [authRetryNonce, setAuthRetryNonce] = useState(0);
     const [error, setError] = useState<string | null>(null);
+    const [workoutsError, setWorkoutsError] = useState<string | null>(null);
     const [showWorkoutModal, setShowWorkoutModal] = useState(false);
     const [showAvatarPicker, setShowAvatarPicker] = useState(false);
     const [showSideMenu, setShowSideMenu] = useState(false);
@@ -2074,6 +2056,7 @@ export default function App() {
             try {
                 const loadedWorkouts: WorkoutEntry[] = [];
                 setError(null);
+                setWorkoutsError(null);
                 console.info("[TelegramAuth] app auth load started", {
                     attempt: authRetryNonce + 1,
                     hasWindowTelegram: Boolean(window.Telegram),
@@ -2170,9 +2153,10 @@ export default function App() {
                                 0,
                                 telegram.initData
                             );
+                            console.log("[WORKOUTS] raw response:", submissions);
                             loadedWorkouts.push(
                                 ...submissions
-                                    .map(submissionToWorkout)
+                                    .map(normalizeWorkout)
                                     .filter(
                                         (
                                             workout
@@ -2180,13 +2164,36 @@ export default function App() {
                                             Boolean(workout)
                                     )
                             );
+                            const currentWeekItems =
+                                buildWeeklyWorkoutDays(loadedWorkouts)
+                                    .flatMap((day) =>
+                                        day.segments.map((segment) => ({
+                                            day: day.key,
+                                            ...segment,
+                                        }))
+                                    );
+                            const groupedWorkouts = loadedWorkouts.reduce<
+                                Record<string, WorkoutEntry[]>
+                            >((groups, workout) => {
+                                groups[workout.type] = [
+                                    ...(groups[workout.type] ?? []),
+                                    workout,
+                                ];
+                                return groups;
+                            }, {});
+                            console.log("[WORKOUTS] normalized items:", loadedWorkouts);
+                            console.log("[WORKOUTS] current week:", currentWeekItems);
+                            console.log("[WORKOUTS] grouped by type:", groupedWorkouts);
                         } catch (workoutReason) {
-                            if (import.meta.env.DEV) {
-                                console.warn(
-                                    "[DEV] /submissions history failed:",
-                                    workoutReason
-                                );
-                            }
+                            console.warn(
+                                "[WORKOUTS] /submissions history failed:",
+                                workoutReason
+                            );
+                            setWorkoutsError(
+                                workoutReason instanceof Error
+                                    ? workoutReason.message
+                                    : "Не удалось загрузить историю тренировок"
+                            );
                         }
                     }
                     setWeeklyWorkouts(loadedWorkouts);
@@ -2236,27 +2243,29 @@ export default function App() {
                             ? "telegram-error"
                             : "backend-error"
                     );
-                    // Instead of clearing challenges on error, fallback to demo set
-                    const demo = createDemoDashboard(failureUser ?? undefined, reason.mode);
-                    setApiChallenges(demo.challenges);
-                    setAchievements(demo.achievements);
+                    setApiChallenges([]);
+                    setAchievements([]);
                     setLeaderboardEntries([]);
                     setMyLeaderboardRank(null);
                     setDashboardMode(reason.mode);
-                    setWeeklyWorkouts(readDemoWorkouts());
+                    setWeeklyWorkouts([]);
+                    setWorkoutsError(
+                        reason instanceof Error
+                            ? reason.message
+                            : "Не удалось загрузить историю тренировок"
+                    );
                 } else {
                     setUser((current) => current);
                     setBackendProfile(null);
                     setProfileSource("none");
                     setAuthStatus("backend-error");
                     setDashboardMode("api-error");
-                    setWeeklyWorkouts(readDemoWorkouts());
-                    // fallback
-                    const demo = createDemoDashboard(undefined, "api-error");
-                    setApiChallenges(demo.challenges);
-                    setAchievements(demo.achievements);
+                    setWeeklyWorkouts([]);
+                    setApiChallenges([]);
+                    setAchievements([]);
                     setLeaderboardEntries([]);
                     setMyLeaderboardRank(null);
+                    setWorkoutsError("Не удалось загрузить историю тренировок");
                 }
                 setError(
                     reason instanceof Error
@@ -2403,7 +2412,9 @@ export default function App() {
                 viewGameUser.achievements.includes(achievement.id)
             ).map(
                 (achievement) =>
-                    `${achievement.icon} ${achievement.title}`
+                    achievement.icon.startsWith("/")
+                        ? achievement.title
+                        : `${achievement.icon} ${achievement.title}`
             ),
         [viewGameUser.achievements]
     );
@@ -2779,12 +2790,21 @@ export default function App() {
                         }
                         onOpenChallenge={setSelectedChallenge}
                         onAddWorkout={() => setShowWorkoutModal(true)}
+                        onOpenSite={handleOpenSite}
                     />
                 );
             case "challenges":
                 return (
                     <ChallengesScreen
                         challenges={challenges}
+                        loading={loading}
+                        error={
+                            dashboardMode === "telegram" ||
+                            dashboardMode === "api-error"
+                                ? error
+                                : null
+                        }
+                        onRetry={() => setAuthRetryNonce((value) => value + 1)}
                         onOpenChallenge={setSelectedChallenge}
                     />
                 );
@@ -2793,6 +2813,14 @@ export default function App() {
                     <WorkoutsScreen
                         challenges={challenges}
                         workouts={weeklyWorkouts}
+                        loading={loading}
+                        error={
+                            dashboardMode === "telegram" ||
+                            dashboardMode === "api-error"
+                                ? workoutsError
+                                : null
+                        }
+                        onRetry={() => setAuthRetryNonce((value) => value + 1)}
                         onAdd={() => setShowWorkoutModal(true)}
                     />
                 );
@@ -3108,7 +3136,7 @@ export default function App() {
                                 setActiveView(item.id);
                             }}
                         >
-                            <Icon size={20} />
+                            <Icon size={28} strokeWidth={2.35} />
                             <span>{item.label}</span>
                         </button>
                     );

@@ -30,7 +30,7 @@ class MigrationChainTests(unittest.TestCase):
     def test_migrations_are_available_in_numeric_order(self) -> None:
         self.assertEqual(
             [version for version, _ in available_migrations()],
-            ["001", "002", "003", "004", "005", "006", "007"],
+            ["001", "002", "003", "004", "005", "006", "007", "008"],
         )
 
     def test_001_bootstraps_legacy_tables(self) -> None:

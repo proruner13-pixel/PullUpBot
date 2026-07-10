@@ -7,7 +7,7 @@ import asyncpg
 
 
 SUPPORTED_ACTIVITIES = {"pullups", "pushups", "running", "plank"}
-LEVEL_XP_STEP = 1000
+XP_PER_LEVEL = 1000
 ACTIVITY_ALIASES = {
     "pullup": "pullups",
     "pullups": "pullups",
@@ -32,7 +32,7 @@ def normalize_activity_type(activity_type: str) -> str:
 
 def calculate_level(total_xp: int) -> int:
     total_xp = max(int(total_xp or 0), 0)
-    return floor(total_xp / LEVEL_XP_STEP) + 1
+    return floor(total_xp / XP_PER_LEVEL) + 1
 
 
 def calculateLevel(totalXp: int) -> int:
@@ -41,14 +41,14 @@ def calculateLevel(totalXp: int) -> int:
 
 def calculate_progress(total_xp: int) -> dict[str, int]:
     total_xp = max(int(total_xp or 0), 0)
-    current_level_xp = total_xp % LEVEL_XP_STEP
+    current_level_xp = total_xp % XP_PER_LEVEL
     return {
         "level": calculate_level(total_xp),
         "current_xp": current_level_xp,
-        "next_level_xp": LEVEL_XP_STEP,
-        "xp_to_next_level": LEVEL_XP_STEP - current_level_xp
+        "next_level_xp": XP_PER_LEVEL,
+        "xp_to_next_level": XP_PER_LEVEL - current_level_xp
         if current_level_xp > 0
-        else LEVEL_XP_STEP,
+        else XP_PER_LEVEL,
     }
 
 
@@ -115,7 +115,9 @@ async def unlock_earned_achievements(
             SELECT
                 app_user.telegram_id,
                 app_user.tokens,
-                app_user.level,
+                (
+                    GREATEST(COALESCE(app_user.total_xp, 0), COALESCE(app_user.xp, 0)) / 1000
+                + 1)::INTEGER AS level,
                 COUNT(submission.id) FILTER (
                     WHERE submission.status = 'approved'
                 ) AS result_count,
@@ -143,7 +145,7 @@ async def unlock_earned_achievements(
             LEFT JOIN challenges AS challenge
               ON challenge.id = user_challenge.challenge_id
             WHERE app_user.telegram_id = $1
-            GROUP BY app_user.telegram_id, app_user.tokens, app_user.level
+            GROUP BY app_user.telegram_id, app_user.tokens, app_user.total_xp, app_user.xp
         ),
         eligible AS (
             SELECT achievement.id

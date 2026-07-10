@@ -2,7 +2,24 @@ import type { ChallengeType } from "./progress";
 
 export type EconomyActivity = "pullups" | "pushups" | "plank" | "running";
 
-export const LEVEL_XP_STEP = 1000;
+export const XP_PER_LEVEL = 1000;
+export const LEVEL_TITLES = [
+    "Новичок",
+    "Начинающий",
+    "Любитель",
+    "Упорный",
+    "Атлет",
+    "Силач",
+    "Профи",
+    "Мастер",
+    "Элита",
+    "Легенда",
+    "Титан",
+    "Босс турника",
+    "Железный чемпион",
+    "Монстр формы",
+    "Легенда PULLUP",
+] as const;
 
 export const CHALLENGE_TO_ACTIVITY: Record<ChallengeType, EconomyActivity> = {
     подтягивания: "pullups",
@@ -50,24 +67,44 @@ export function calculateXp(earnedPullup: number): number {
 }
 
 export function calculateLevel(totalXp: number): number {
-    return Math.floor(Math.max(Math.floor(totalXp || 0), 0) / LEVEL_XP_STEP) + 1;
+    return getLevelFromXp(totalXp);
 }
 
 export function calculateProgress(totalXp: number) {
     const safeXp = Math.max(Math.floor(totalXp || 0), 0);
-    const level = calculateLevel(safeXp);
-    const levelStartXp = (level - 1) * LEVEL_XP_STEP;
-    const nextLevelXp = level * LEVEL_XP_STEP;
+    const level = getLevelFromXp(safeXp);
+    const levelStartXp = (level - 1) * XP_PER_LEVEL;
+    const nextLevelXp = level * XP_PER_LEVEL;
     const currentLevelXp = safeXp - levelStartXp;
     return {
         level,
         levelStartXp,
         nextLevelXp,
         currentLevelXp,
+        progressInLevel: currentLevelXp,
         progressPercent: Math.min(
             100,
-            Math.round((currentLevelXp / LEVEL_XP_STEP) * 100)
+            Math.round((currentLevelXp / XP_PER_LEVEL) * 100)
         ),
         xpToNextLevel: nextLevelXp - safeXp,
     };
+}
+
+export function getLevelFromXp(xp: number): number {
+    return Math.floor(Math.max(Math.floor(xp || 0), 0) / XP_PER_LEVEL) + 1;
+}
+
+export function getXpProgressInLevel(xp: number): number {
+    return Math.max(Math.floor(xp || 0), 0) % XP_PER_LEVEL;
+}
+
+export function getXpToNextLevel(xp: number): number {
+    return XP_PER_LEVEL - getXpProgressInLevel(xp);
+}
+
+export function getLevelTitle(level: number): string {
+    const safeLevel = Math.max(Math.floor(level || 1), 1);
+    return LEVEL_TITLES[
+        Math.min(safeLevel, LEVEL_TITLES.length) - 1
+    ];
 }

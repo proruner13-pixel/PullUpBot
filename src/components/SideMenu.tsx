@@ -107,7 +107,14 @@ export default function SideMenu({
                                 <strong>{name}</strong>
                                 <span>@{username || "athlete"}</span>
                             </div>
-                            <b>{tokens} 🪙</b>
+                            <b className="side-menu-token-balance">
+                                <span>{tokens}</span>
+                                <img
+                                    src="/assets/home/pullup-coin.png"
+                                    alt=""
+                                    aria-hidden="true"
+                                />
+                            </b>
                         </div>
 
                         <div className="side-menu-motivation">

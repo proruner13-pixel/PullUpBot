@@ -135,7 +135,15 @@ export default function AchievementsScreen({
                                 <X size={19} />
                             </button>
                             <div className="achievement-detail-icon">
-                                {selected.definition.icon}
+                                {selected.definition.icon.startsWith("/") ? (
+                                    <img
+                                        src={selected.definition.icon}
+                                        alt=""
+                                        aria-hidden="true"
+                                    />
+                                ) : (
+                                    selected.definition.icon
+                                )}
                             </div>
                             <span>
                                 {selected.state === "locked" ? (

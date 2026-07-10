@@ -8,7 +8,7 @@ import {
     loadUser,
     type ChallengeType,
 } from "../game/progress";
-import { LEVEL_XP_STEP, calculateLevel } from "../game/economy";
+import { XP_PER_LEVEL, calculateLevel } from "../game/economy";
 import {
     DEMO_API_USER,
     DEMO_TELEGRAM_ID,
@@ -337,7 +337,7 @@ function localProfile(): ProfileDto {
         xp: user.xp,
         total_xp: user.xp,
         level: calculateLevel(user.xp),
-        next_level_progress: user.xp % LEVEL_XP_STEP,
+        next_level_progress: user.xp % XP_PER_LEVEL,
         streak_days: user.streakDays,
         ref_code: "PULLUP-DEMO-123",
         referred_by: null,
@@ -391,7 +391,7 @@ export async function getChallenges(initData?: string): Promise<ChallengeDto[]> 
         progress: challenge.progress,
         xp: challenge.xp,
         level: challenge.level,
-        next_level_progress: challenge.xp % LEVEL_XP_STEP,
+        next_level_progress: challenge.xp % XP_PER_LEVEL,
         completed: false,
     }));
 }

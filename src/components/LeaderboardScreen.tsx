@@ -5,6 +5,7 @@ import type {
     LeaderboardAroundEntryDto,
     MyLeaderboardRankDto,
 } from "../api/client";
+import { calculateLevel, getLevelTitle } from "../game/economy";
 
 interface LeaderboardScreenProps {
     currentName: string;
@@ -130,6 +131,7 @@ export default function LeaderboardScreen({
                     const avatarUrl = isCurrent
                         ? currentAvatarUrl
                         : user.avatar_url;
+                    const level = calculateLevel(user.xp);
                     return (
                         <motion.article
                             layout
@@ -155,7 +157,9 @@ export default function LeaderboardScreen({
                             </div>
                             <div className="leaderboard-athlete">
                                 <strong>{name}</strong>
-                                <span>Уровень {user.level}</span>
+                                <span>
+                                    Уровень {level} · {getLevelTitle(level)}
+                                </span>
                                 <small>
                                     {user.xp.toLocaleString("ru-RU")} XP ·{" "}
                                     {user.balance.toLocaleString("ru-RU")} PULLUP ·{" "}

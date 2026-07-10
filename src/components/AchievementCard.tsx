@@ -18,6 +18,7 @@ export default function AchievementCard({
     progress,
     onClick,
 }: AchievementCardProps) {
+    const isImageIcon = achievement.icon.startsWith("/");
     const progressPercent = Math.min(
         100,
         Math.round((progress / achievement.goal) * 100)
@@ -43,7 +44,11 @@ export default function AchievementCard({
             }}
         >
             <div className="achievement-card-medal">
-                <span>{achievement.icon}</span>
+                {isImageIcon ? (
+                    <img src={achievement.icon} alt="" aria-hidden="true" />
+                ) : (
+                    <span>{achievement.icon}</span>
+                )}
                 {state === "locked" ? (
                     <Lock className="achievement-state-icon" size={14} />
                 ) : state === "newlyUnlocked" ? (
