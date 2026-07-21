@@ -14,7 +14,8 @@ from aiogram.filters import Command, CommandObject
 from aiogram.types import (
     Message, CallbackQuery,
     InlineKeyboardMarkup, InlineKeyboardButton, ForceReply,
-    BotCommand, BotCommandScopeDefault, BotCommandScopeChat, User, FSInputFile
+    BotCommand, BotCommandScopeDefault, BotCommandScopeChat, User, FSInputFile,
+    MenuButtonWebApp,
 )
 import aiohttp
 import asyncpg
@@ -373,6 +374,8 @@ USER_COMMANDS = [
     BotCommand(command="referral", description="Реферальная программа"),
     BotCommand(command="support", description="Поддержка"),
 ]
+
+WEBAPP_MENU_BUTTON_TEXT = "Открыть PULLUP"
 
 def moderation_kb(pullup_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -1237,6 +1240,13 @@ async def main():
         await ensure_schema()
         await bot.delete_webhook(drop_pending_updates=False)
         logger.info("WEBHOOK_DELETED")
+        await bot.set_chat_menu_button(
+            menu_button=MenuButtonWebApp(
+                text=WEBAPP_MENU_BUTTON_TEXT,
+                web_app=WebAppInfo(url=WEBAPP_URL),
+            )
+        )
+        logger.info("WEBAPP_MENU_BUTTON_CONFIGURED")
         await bot.set_my_commands(USER_COMMANDS, scope=BotCommandScopeDefault())
         for admin_id in ADMIN_IDS:
             try:
