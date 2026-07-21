@@ -38,23 +38,21 @@ services:
     plan: starter
     buildCommand: pip install -r bot/requirements.txt
     startCommand: python -m bot.worker
-    autoDeployTrigger: commit
+    autoDeploy: true
     envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: DATABASE_URL
+        sync: false
+      - key: WEBAPP_URL
+        sync: false
+      - key: API_URL
+        sync: false
+      - key: ADMIN_IDS
+        sync: false
       - key: PYTHON_VERSION
         value: 3.13.5
       - key: APP_ENV
         value: production
-      - key: DATABASE_URL
-        sync: false
-      - key: BOT_TOKEN
-        sync: false
-      - key: WEBAPP_URL
-        value: https://pullupbot.vercel.app
-      - key: CORS_ORIGINS
-        value: https://pullupbot.vercel.app,https://pullupbot-proruner13-pixels-projects.vercel.app,https://pullupbot-proruner13-pixel-proruner13-pixels-projects.vercel.app,https://pullup.vercel.app,https://pullup-proruner13-pixels-projects.vercel.app,https://pullup-dun.vercel.app,https://pullup-proruner13-pixel-proruner13-pixels-projects.vercel.app,https://pullup-backend-dtxl.onrender.com
-      - key: ADMIN_ID
-        sync: false
-      - key: TELEGRAM_AUTH_MAX_AGE
-        value: "86400"
       - key: LOG_LEVEL
         value: INFO

@@ -1,7 +1,5 @@
 # bot/main.py
 import os
-import sys
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 import random
 
 import asyncio
@@ -21,7 +19,7 @@ from aiogram.types import (
 import aiohttp
 import asyncpg
 from aiogram.types import WebAppInfo
-from app.config import ROOT_ENV_FILE, Settings, root_env_keys
+from dotenv import load_dotenv
 from app.services.rewards import apply_workout_rewards
 
 
@@ -91,36 +89,60 @@ async def download_webapp_video(video_url: Optional[str], pullup_id: int) -> str
 
 
 # ================== Конфиг ==================
-settings = Settings.from_env()
-BOT_TOKEN = settings.bot_token
-DATABASE_URL = settings.database_dsn
-ADMIN_ID = settings.admin_id
-APP_ENV = settings.environment
-WEBAPP_URL = settings.webapp_url
-API_URL = settings.api_url
+ROOT_ENV_FILE = Path(__file__).resolve().parent.parent / ".env"
+BOT_TOKEN = ""
+DATABASE_URL = ""
+ADMIN_IDS: frozenset[int] = frozenset()
+ADMIN_ID = 0  # Legacy alias for code paths that expect one moderator.
+APP_ENV = "development"
+WEBAPP_URL = ""
+API_URL = ""
 BOT_PUBLIC_URL = os.getenv("BOT_PUBLIC_URL", "https://t.me/ActiveRunBot").strip()
 SUPPORT_URL = os.getenv("SUPPORT_URL", BOT_PUBLIC_URL).strip()
 WEBAPP_DEEP_LINKS_ENABLED = (
     os.getenv("WEBAPP_DEEP_LINKS_ENABLED", "false").lower() == "true"
 )
 
-if not WEBAPP_URL:
-    if APP_ENV == "production":
-        raise RuntimeError("WEBAPP_URL не задан в production")
-    WEBAPP_URL = "https://pullupbot.vercel.app"
+def load_bot_config() -> None:
+    """Load and validate worker configuration without overriding Render env."""
+    global BOT_TOKEN, DATABASE_URL, ADMIN_IDS, ADMIN_ID
+    global APP_ENV, WEBAPP_URL, API_URL
 
-if not BOT_TOKEN:
-    found_variables = ", ".join(root_env_keys()) or "<none>"
-    raise RuntimeError(
-        "BOT_TOKEN не задан или содержит placeholder. "
-        f"Проверен файл: {ROOT_ENV_FILE}. "
-        f"Найдены переменные: {found_variables}"
-    )
-if APP_ENV == "production" and not ADMIN_ID:
-    raise RuntimeError("ADMIN_ID не задан в production")
+    load_dotenv(ROOT_ENV_FILE, override=False)
+    BOT_TOKEN = os.getenv("BOT_TOKEN", "").strip()
+    DATABASE_URL = os.getenv("DATABASE_URL", "").strip()
+    APP_ENV = os.getenv("APP_ENV", "development").strip().lower()
+    WEBAPP_URL = os.getenv("WEBAPP_URL", "").strip().rstrip("/")
+    API_URL = os.getenv("API_URL", "").strip().rstrip("/")
 
-# aiogram 3.7+: parse_mode задаётся через DefaultBotProperties
-bot = Bot(token=BOT_TOKEN, default=DefaultBotProperties(parse_mode="HTML"))
+    if not BOT_TOKEN:
+        raise RuntimeError("BOT_TOKEN environment variable is required")
+    if not DATABASE_URL:
+        raise RuntimeError("DATABASE_URL environment variable is required")
+
+    raw_admin_ids = os.getenv("ADMIN_IDS", "").strip()
+    if not raw_admin_ids:
+        raw_admin_ids = os.getenv("ADMIN_ID", "").strip()
+    try:
+        ADMIN_IDS = frozenset(
+            int(value.strip())
+            for value in raw_admin_ids.split(",")
+            if value.strip()
+        )
+    except ValueError as exc:
+        raise RuntimeError(
+            "ADMIN_IDS must be a comma-separated list of Telegram user IDs"
+        ) from exc
+    ADMIN_ID = next(iter(ADMIN_IDS), 0)
+
+    if not WEBAPP_URL:
+        if APP_ENV == "production":
+            raise RuntimeError("WEBAPP_URL environment variable is required")
+        WEBAPP_URL = "https://pullupbot.vercel.app"
+
+
+# Runtime resources are initialized once in main(), not during module import.
+bot: Optional[Bot] = None
 dp = Dispatcher()
 db_pool: Optional[asyncpg.Pool] = None
 # ================== Схема БД (автосоздание) ==================
@@ -928,7 +950,7 @@ async def handle_video(message: Message):
 
 # ================== Админ (модерация) ==================
 def is_admin(message: Message) -> bool:
-    return message.from_user.id == ADMIN_ID
+    return message.from_user.id in ADMIN_IDS
 
 @dp.message(Command("pending"))
 async def cmd_pending(message: Message):
@@ -1050,7 +1072,7 @@ async def open_item(chat_id: int, pullup_id: int, queue_ids: list[int]):
 
 @dp.callback_query(F.data.startswith("open:"))
 async def cb_open(query: CallbackQuery):
-    if query.from_user.id != ADMIN_ID:
+    if query.from_user.id not in ADMIN_IDS:
         return await query.answer("Только для модератора", show_alert=True)
     
     pullup_id = int(query.data.split(":")[1])
@@ -1060,7 +1082,7 @@ async def cb_open(query: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("view:"))
 async def cb_view(query: CallbackQuery):
-    if query.from_user.id != ADMIN_ID:
+    if query.from_user.id not in ADMIN_IDS:
         return await query.answer("Только для модератора", show_alert=True)
     
     pullup_id = int(query.data.split(":")[1])
@@ -1109,7 +1131,7 @@ async def cb_view(query: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("approve:"))
 async def cb_approve(query: CallbackQuery):
-    if query.from_user.id != ADMIN_ID:
+    if query.from_user.id not in ADMIN_IDS:
         return await query.answer("Только для модератора", show_alert=True)
     
     pullup_id = int(query.data.split(":")[1])
@@ -1122,7 +1144,7 @@ async def cb_approve(query: CallbackQuery):
 
 @dp.callback_query(F.data.startswith("reject:"))
 async def cb_reject(query: CallbackQuery):
-    if query.from_user.id != ADMIN_ID:
+    if query.from_user.id not in ADMIN_IDS:
         return await query.answer("Только для модератора", show_alert=True)
     
     pullup_id = int(query.data.split(":")[1])
@@ -1142,7 +1164,7 @@ async def moderator_inputs(message: Message):
     - если approve_wait[admin] > 0 — ждём число (count) и одобряем;
     - если < 0 — ждём причину отклонения.
     """
-    if message.from_user.id != ADMIN_ID:
+    if message.from_user.id not in ADMIN_IDS:
         return
     
     if message.from_user.id not in approve_wait:
@@ -1202,30 +1224,45 @@ async def moderator_inputs(message: Message):
 
 # ================== Запуск ==================
 async def main():
-    global db_pool
-    db_pool = await init_db_pool()
-    await ensure_schema()
-    await bot.delete_webhook(drop_pending_updates=False)
-    await bot.set_my_commands(
-        USER_COMMANDS,
-        scope=BotCommandScopeDefault(),
-    )
-    if ADMIN_ID:
-        try:
-            await bot.set_my_commands(
-                [
-                    *USER_COMMANDS,
-                    BotCommand(
-                        command="pending",
-                        description="Очередь модерации",
-                    ),
-                ],
-                scope=BotCommandScopeChat(chat_id=ADMIN_ID),
-            )
-        except Exception as error:
-            print(f"[BOT] Не удалось настроить меню модератора: {error}")
-    logger.info("BOT_STARTED mode=polling admin_id=%s", ADMIN_ID)
-    await dp.start_polling(bot)
+    global bot, db_pool
+    logger.info("BOT_STARTING")
+    try:
+        load_bot_config()
+        bot = Bot(
+            token=BOT_TOKEN,
+            default=DefaultBotProperties(parse_mode="HTML"),
+        )
+        db_pool = await init_db_pool()
+        logger.info("DATABASE_CONNECTED")
+        await ensure_schema()
+        await bot.delete_webhook(drop_pending_updates=False)
+        logger.info("WEBHOOK_DELETED")
+        await bot.set_my_commands(USER_COMMANDS, scope=BotCommandScopeDefault())
+        for admin_id in ADMIN_IDS:
+            try:
+                await bot.set_my_commands(
+                    [
+                        *USER_COMMANDS,
+                        BotCommand(command="pending", description="Очередь модерации"),
+                    ],
+                    scope=BotCommandScopeChat(chat_id=admin_id),
+                )
+            except Exception:
+                logger.exception("ADMIN_COMMANDS_SETUP_FAILED admin_id=%s", admin_id)
+        logger.info("BOT_STARTED mode=polling admin_ids=%s", len(ADMIN_IDS))
+        await dp.start_polling(bot)
+    except Exception:
+        logger.exception("BOT_START_FAILED")
+        raise
+    finally:
+        if db_pool is not None:
+            await db_pool.close()
+            db_pool = None
+        if bot is not None:
+            await bot.session.close()
+            bot = None
+        logger.info("BOT_STOPPED")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

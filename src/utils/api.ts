@@ -17,6 +17,7 @@ import {
     detectAppMode,
     waitForTelegramWebApp,
 } from "./telegram";
+import { normalizeExerciseType } from "../config/exerciseTypes";
 
 export interface ApiUser {
     telegram_id: number;
@@ -160,24 +161,6 @@ function numberFrom(value: unknown, fallback = 0): number {
 
 function stringFrom(value: unknown, fallback = ""): string {
     return typeof value === "string" ? value : fallback;
-}
-
-const EXERCISE_ALIASES: Record<string, string> = {
-    pullup: "pullups",
-    pull_ups: "pullups",
-    pullups: "pullups",
-    pushup: "pushups",
-    push_ups: "pushups",
-    pushups: "pushups",
-    plank: "plank",
-    run: "running",
-    running: "running",
-    running_km: "running",
-};
-
-function normalizeExerciseType(value: string): string {
-    const normalized = value.trim().toLowerCase();
-    return EXERCISE_ALIASES[normalized] ?? normalized;
 }
 
 function boolFrom(value: unknown, fallback = false): boolean {
@@ -416,14 +399,19 @@ export async function fetchDashboard(
         const challenges = normalizeChallenges(rawChallenges);
         const activeChallenges = challenges.filter(
             (challenge) =>
-                challenge.status === "active" && !challenge.userCompleted
+                challenge.is_active !== false &&
+                !Boolean(challenge.userCompleted ?? challenge.completed)
         );
         const completedChallenges = challenges.filter(
             (challenge) => Boolean(challenge.userCompleted)
         );
         console.log("[CHALLENGES] normalized count:", challenges.length);
         console.log("[CHALLENGES] normalized:", challenges);
+        console.log("[REAL USER] challenges raw:", rawChallenges);
+        console.log("[REAL USER] challenges normalized:", challenges);
+        console.log("[REAL USER] active challenges:", activeChallenges);
         console.log("[CHALLENGES] rendered active:", activeChallenges);
+        console.log("[REAL USER] active challenges count:", activeChallenges.length);
         console.log("[CHALLENGES] completed:", completedChallenges);
         console.info("[TelegramAuth] backend dashboard response", {
             challenges: challenges.length,

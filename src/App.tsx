@@ -88,6 +88,10 @@ import {
     type User as GameUser,
 } from "./game/progress";
 import {
+    EXERCISE_TYPES,
+    normalizeExerciseType,
+} from "./config/exerciseTypes";
+import {
     XP_PER_LEVEL,
     calculateLevel,
     calculateProgress,
@@ -381,15 +385,12 @@ function formatFullDate(date: Date): string {
 
 function normalizeWorkoutType(type: string): WorkoutType | null {
     const normalized: Record<string, WorkoutType> = {
-        pullup: "pullup",
         pullups: "pullup",
-        pushup: "pushup",
         pushups: "pushup",
-        run: "run",
         running: "run",
         plank: "plank",
     };
-    return normalized[type] ?? null;
+    return normalized[normalizeExerciseType(type)] ?? null;
 }
 
 function calculateWorkoutTokens(type: WorkoutType, value: number): number {
@@ -737,6 +738,7 @@ function Dashboard({
     onOpenChallenge,
     onAddWorkout,
     onOpenSite,
+    onStreakClick,
 }: {
     user: ApiUser;
     avatarUrl: string;
@@ -752,6 +754,7 @@ function Dashboard({
     onOpenChallenge: (challenge: ApiChallenge) => void;
     onAddWorkout: () => void;
     onOpenSite: () => void;
+    onStreakClick: () => void;
 }) {
     const firstName =
         user.first_name ||
@@ -860,13 +863,19 @@ function Dashboard({
             </section>
 
             <section className="home-quick-stats">
-                <button className="home-quick-card home-quick-card--streak">
+                <motion.button
+                    type="button"
+                    className="home-quick-card home-quick-card--streak streak-trigger"
+                    onClick={onStreakClick}
+                    whileTap={{ scale: 0.97 }}
+                    aria-label={`Показать текущую серию: ${user.streak_days} дней`}
+                >
                     <img src="/assets/home/streak-runner.png" alt="" />
                     <Flame size={23} />
                     <span>Серия</span>
                     <strong>{user.streak_days}</strong>
                     <small>дней</small>
-                </button>
+                </motion.button>
                 <button
                     className="home-quick-card home-quick-card--rating"
                     onClick={onOpenLeaderboard}
@@ -945,7 +954,8 @@ function ChallengesScreen({
     const visible = challenges.filter((item) =>
         filter === "done"
             ? Boolean(item.userCompleted ?? item.completed)
-            : item.is_active !== false
+            : item.is_active !== false &&
+              !Boolean(item.userCompleted ?? item.completed)
     );
 
     return (
@@ -1030,6 +1040,32 @@ function WorkoutsScreen({
     );
     const hasWeekData = weeklyDays.some((day) => day.tokens > 0);
     const selectedDay = weeklyDays.find((day) => day.key === selectedDayKey);
+    const workoutSummary = useMemo(
+        () => EXERCISE_TYPES.map((config) => {
+            const challenge = challenges.find(
+                (item) => normalizeExerciseType(item.exercise) === config.type
+            );
+            const approvedSubmissions = workouts.filter(
+                (item) =>
+                    normalizeExerciseType(item.type) === config.type &&
+                    (item.status === "approved" || item.status === "completed")
+            );
+            const confirmedFromSubmissions = approvedSubmissions.reduce(
+                (total, item) => total + item.value,
+                0
+            );
+            return {
+                ...config,
+                value: challenge?.progress ?? confirmedFromSubmissions ?? 0,
+            };
+        }),
+        [challenges, workouts]
+    );
+
+    useEffect(() => {
+        console.log("[REAL USER] workout summary:", workoutSummary);
+        console.log("[REAL USER] workout summary count:", workoutSummary.length);
+    }, [workoutSummary]);
 
     return (
         <>
@@ -1050,10 +1086,10 @@ function WorkoutsScreen({
                 </EmptyState>
             ) : null}
             <div className="workout-list">
-                {!loading && !error && challenges
-                    .map((challenge, index) => {
+                {!loading && !error && workoutSummary
+                    .map((summary, index) => {
                         const visual =
-                            CHALLENGE_VISUALS[challenge.exercise] ??
+                            CHALLENGE_VISUALS[summary.type] ??
                             CHALLENGE_VISUALS.pullups;
                         return (
                             <motion.div
@@ -1061,7 +1097,7 @@ function WorkoutsScreen({
                                 animate={{ opacity: 1, y: 0 }}
                                 transition={{ delay: index * 0.06 }}
                                 className="workout-row"
-                                key={challenge.exercise}
+                                key={summary.type}
                             >
                                 <span
                                     className="workout-icon"
@@ -1070,10 +1106,10 @@ function WorkoutsScreen({
                                     <WorkoutImage visual={visual} />
                                 </span>
                                 <div>
-                                    <strong>{visual.shortLabel}</strong>
+                                    <strong>{summary.title}</strong>
                                     <span>Текущий подтверждённый прогресс</span>
                                 </div>
-                                <b>+{challenge.progress}</b>
+                                <b>+{summary.value} {summary.unit}</b>
                             </motion.div>
                         );
                     })}
@@ -1226,6 +1262,7 @@ function ProfileScreen({
     onOpenLeaderboard,
     onOpenReferrals,
     onOpenLogout,
+    onStreakClick,
 }: {
     user: ApiUser;
     badges: string[];
@@ -1240,6 +1277,7 @@ function ProfileScreen({
     onOpenLeaderboard: () => void;
     onOpenReferrals: () => void;
     onOpenLogout: () => void;
+    onStreakClick: () => void;
 }) {
     const referralLink = `https://t.me/ActiveRunBot?start=${user.telegram_id}`;
     const [copied, setCopied] = useState(false);
@@ -1406,12 +1444,18 @@ function ProfileScreen({
                         <strong>ТОП</strong>
                         <span>{ratingPlace ? `#${ratingPlace}` : "#1"} в рейтинге</span>
                     </button>
-                    <button type="button" onClick={onOpenSettings}>
+                    <motion.button
+                        type="button"
+                        className="streak-trigger"
+                        onClick={onStreakClick}
+                        whileTap={{ scale: 0.97 }}
+                        aria-label={`Показать текущую серию: ${user.streak_days} дней`}
+                    >
                         <Flame size={25} />
                         <span>Серия</span>
                         <strong>{user.streak_days} дней</strong>
                         <ChevronRight size={17} />
-                    </button>
+                    </motion.button>
                 </div>
             </section>
 
@@ -2022,6 +2066,8 @@ export default function App() {
     const [newlyUnlockedCodes, setNewlyUnlockedCodes] = useState<string[]>([]);
     const [notification, setNotification] =
         useState<GameNotification | null>(null);
+    const [showStreakToast, setShowStreakToast] = useState(false);
+    const streakToastTimerRef = useRef<number | null>(null);
     const [avatarSavedFlash, setAvatarSavedFlash] = useState(false);
     const [selectedAvatarId, setSelectedAvatarId] = useState(() => {
         try {
@@ -2154,6 +2200,7 @@ export default function App() {
                                 telegram.initData
                             );
                             console.log("[WORKOUTS] raw response:", submissions);
+                            console.log("[REAL USER] submissions:", submissions);
                             loadedWorkouts.push(
                                 ...submissions
                                     .map(normalizeWorkout)
@@ -2334,6 +2381,23 @@ export default function App() {
         const timer = window.setTimeout(() => setNotification(null), 2500);
         return () => window.clearTimeout(timer);
     }, [notification]);
+
+    const handleStreakClick = useCallback(() => {
+        setShowStreakToast(true);
+        if (streakToastTimerRef.current !== null) {
+            window.clearTimeout(streakToastTimerRef.current);
+        }
+        streakToastTimerRef.current = window.setTimeout(() => {
+            setShowStreakToast(false);
+            streakToastTimerRef.current = null;
+        }, 2500);
+    }, []);
+
+    useEffect(() => () => {
+        if (streakToastTimerRef.current !== null) {
+            window.clearTimeout(streakToastTimerRef.current);
+        }
+    }, []);
 
     const selectedAvatar = useMemo(
         () =>
@@ -2791,6 +2855,7 @@ export default function App() {
                         onOpenChallenge={setSelectedChallenge}
                         onAddWorkout={() => setShowWorkoutModal(true)}
                         onOpenSite={handleOpenSite}
+                        onStreakClick={handleStreakClick}
                     />
                 );
             case "challenges":
@@ -2846,6 +2911,7 @@ export default function App() {
                         onOpenLeaderboard={() => setActiveView("leaderboard")}
                         onOpenReferrals={() => openMenuScreen("referrals")}
                         onOpenLogout={() => openMenuScreen("logout")}
+                        onStreakClick={handleStreakClick}
                     />
                 );
             case "leaderboard":
@@ -3088,6 +3154,38 @@ export default function App() {
                     Приложение открыто не через Telegram WebApp.
                 </div>
             )}
+            <AnimatePresence>
+                {showStreakToast && displayUser && (
+                    <motion.div
+                        className="streak-toast"
+                        role="status"
+                        aria-live="polite"
+                        initial={{ opacity: 0, y: -30, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: -20, scale: 0.96 }}
+                        transition={{ duration: 0.25, ease: "easeOut" }}
+                    >
+                        <motion.span
+                            className="streak-toast__icon"
+                            aria-hidden="true"
+                            animate={{ scale: [1, 1.15, 1] }}
+                            transition={{ duration: 0.8, repeat: Infinity }}
+                        >
+                            🔥
+                        </motion.span>
+                        <div className="streak-toast__copy">
+                            <strong>
+                                {displayUser.streak_days === 0
+                                    ? "Начни серию сегодня"
+                                    : displayUser.streak_days === 1
+                                      ? "Первый день серии!"
+                                      : `${displayUser.streak_days} дней подряд!`}
+                            </strong>
+                            <span>Продолжай тренироваться каждый день</span>
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
             <AnimatePresence>
                 {notification && (
                     <motion.div

@@ -63,6 +63,16 @@ class ChallengeRepositoryTests(unittest.IsolatedAsyncioTestCase):
         self.assertIn("user_challenge.xp", connection.query)
         self.assertIn("user_challenge.level", connection.query)
 
+    async def test_list_for_user_starts_from_global_catalog(self) -> None:
+        connection = FakeConnection()
+
+        await list_for_user(connection, 123456)
+
+        self.assertIn("FROM challenges AS challenge", connection.query)
+        self.assertIn("LEFT JOIN user_challenges AS user_challenge", connection.query)
+        self.assertIn("COALESCE(user_challenge.progress, 0)", connection.query)
+        self.assertNotIn("WHERE user_challenge.progress > 0", connection.query)
+
 
 class ChallengeRouteTests(unittest.IsolatedAsyncioTestCase):
     async def test_challenges_handler_returns_response_models(self) -> None:
