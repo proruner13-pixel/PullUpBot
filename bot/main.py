@@ -375,7 +375,18 @@ USER_COMMANDS = [
     BotCommand(command="support", description="Поддержка"),
 ]
 
-WEBAPP_MENU_BUTTON_TEXT = "Открыть PULLUP"
+WEBAPP_MENU_BUTTON_TEXT = "\u041e\u0442\u043a\u0440\u044b\u0442\u044c PULLUP"
+
+
+async def configure_webapp_menu_button(chat_id: int | None = None) -> None:
+    await bot.set_chat_menu_button(
+        chat_id=chat_id,
+        menu_button=MenuButtonWebApp(
+            text=WEBAPP_MENU_BUTTON_TEXT,
+            web_app=WebAppInfo(url=WEBAPP_URL),
+        ),
+    )
+
 
 def moderation_kb(pullup_id: int) -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -626,6 +637,10 @@ approve_wait: Dict[int, int] = {}  # moderator_tid -> pullup_id
 # ================== Хэндлеры пользователя ==================
 @dp.message(Command("start"))
 async def cmd_start(message: Message, command: CommandObject):
+    try:
+        await configure_webapp_menu_button(message.chat.id)
+    except Exception:
+        logger.exception("WEBAPP_MENU_BUTTON_CHAT_FAILED chat_id=%s", message.chat.id)
     await ensure_user(message.from_user.id, message.from_user.username, message.from_user.full_name)
     await apply_referral(message.from_user.id, command.args)
 
@@ -722,6 +737,10 @@ async def cmd_help(message: Message):
 
 @dp.message(Command("app"))
 async def cmd_app(message: Message):
+    try:
+        await configure_webapp_menu_button(message.chat.id)
+    except Exception:
+        logger.exception("WEBAPP_MENU_BUTTON_CHAT_FAILED chat_id=%s", message.chat.id)
     await message.answer(
         "Твой прогресс, челленджи и достижения — в приложении.",
         reply_markup=app_keyboard(),
@@ -1240,12 +1259,7 @@ async def main():
         await ensure_schema()
         await bot.delete_webhook(drop_pending_updates=False)
         logger.info("WEBHOOK_DELETED")
-        await bot.set_chat_menu_button(
-            menu_button=MenuButtonWebApp(
-                text=WEBAPP_MENU_BUTTON_TEXT,
-                web_app=WebAppInfo(url=WEBAPP_URL),
-            )
-        )
+        await configure_webapp_menu_button()
         logger.info("WEBAPP_MENU_BUTTON_CONFIGURED")
         await bot.set_my_commands(USER_COMMANDS, scope=BotCommandScopeDefault())
         for admin_id in ADMIN_IDS:
