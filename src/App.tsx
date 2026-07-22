@@ -102,7 +102,7 @@ import {
 } from "./game/economy";
 import {
     resetDemoProgress as resetStoredDemoProgress,
-    type LeaderboardAroundEntryDto,
+    type LeaderboardEntryDto,
     type MyLeaderboardRankDto,
 } from "./api/client";
 import {
@@ -2030,7 +2030,7 @@ export default function App() {
     const [apiChallenges, setApiChallenges] = useState<ApiChallenge[]>([]);
     const [achievements, setAchievements] = useState<ApiAchievement[]>([]);
     const [leaderboardEntries, setLeaderboardEntries] = useState<
-        LeaderboardAroundEntryDto[]
+        LeaderboardEntryDto[]
     >([]);
     const [myLeaderboardRank, setMyLeaderboardRank] =
         useState<MyLeaderboardRankDto | null>(null);

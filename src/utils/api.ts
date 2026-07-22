@@ -6,10 +6,10 @@ import {
     getApiUrlSource,
     isApiEnabled,
     PullupApiError,
-    getLeaderboardAroundMe,
+    getAllLeaderboard,
     getMyLeaderboardRank,
     type ProfileDto,
-    type LeaderboardAroundEntryDto,
+    type LeaderboardEntryDto,
     type MyLeaderboardRankDto,
 } from "../api/client";
 import { DEMO_API_USER, createDemoDashboard } from "../mocks/data";
@@ -68,7 +68,7 @@ export interface DashboardData {
     user: ApiUser;
     challenges: ApiChallenge[];
     achievements: ApiAchievement[];
-    leaderboard: LeaderboardAroundEntryDto[];
+    leaderboard: LeaderboardEntryDto[];
     myLeaderboardRank: MyLeaderboardRankDto | null;
     mode: DashboardMode;
 }
@@ -366,7 +366,7 @@ export async function fetchDashboard(
         const [
             rawChallenges,
             achievements,
-            leaderboardAround,
+            leaderboard,
             myLeaderboardRank,
         ] = await Promise.all([
             apiRequest<unknown>(
@@ -382,9 +382,9 @@ export async function fetchDashboard(
                 if (import.meta.env.DEV) console.warn("[DEV] /api/achievements failed:", err);
                 return [] as ApiAchievement[];
             }),
-            getLeaderboardAroundMe(telegram.initData, 3).catch((err) => {
-                if (import.meta.env.DEV) console.warn("[DEV] /api/leaderboard/around-me failed:", err);
-                return { rank: 0, total_users: 0, items: [] };
+            getAllLeaderboard(telegram.initData).catch((err) => {
+                if (import.meta.env.DEV) console.warn("[DEV] /api/leaderboard failed:", err);
+                return { total_users: 0, items: [] };
             }),
             getMyLeaderboardRank(telegram.initData).catch((err) => {
                 if (import.meta.env.DEV) console.warn("[DEV] /api/leaderboard/me failed:", err);
@@ -422,7 +422,7 @@ export async function fetchDashboard(
             user: authenticatedUser,
             challenges,
             achievements,
-            leaderboard: leaderboardAround.items,
+            leaderboard: leaderboard.items,
             myLeaderboardRank,
             mode: "telegram",
         };

@@ -414,6 +414,24 @@ export async function getLeaderboard(
         : { total_users: 0, items: [] };
 }
 
+export async function getAllLeaderboard(
+    initData?: string
+): Promise<LeaderboardListDto> {
+    const pageSize = 100;
+    const items: LeaderboardEntryDto[] = [];
+    let totalUsers = 0;
+
+    do {
+        const page = await getLeaderboard(initData, pageSize, items.length);
+        totalUsers = page.total_users;
+        items.push(...page.items);
+
+        if (page.items.length === 0) break;
+    } while (items.length < totalUsers);
+
+    return { total_users: totalUsers, items };
+}
+
 export async function getMyLeaderboardRank(
     initData?: string
 ): Promise<MyLeaderboardRankDto | null> {

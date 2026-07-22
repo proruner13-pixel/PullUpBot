@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { motion } from "framer-motion";
 import { Dumbbell, Medal, ShieldCheck, Trophy, UsersRound } from "lucide-react";
 import type {
-    LeaderboardAroundEntryDto,
+    LeaderboardEntryDto,
     MyLeaderboardRankDto,
 } from "../api/client";
 import { calculateLevel, getLevelTitle } from "../game/economy";
@@ -11,7 +11,7 @@ interface LeaderboardScreenProps {
     currentName: string;
     currentAvatarUrl: string;
     currentTelegramId: number;
-    entries: LeaderboardAroundEntryDto[];
+    entries: LeaderboardEntryDto[];
     myRank: MyLeaderboardRankDto | null;
 }
 
@@ -48,7 +48,7 @@ export default function LeaderboardScreen({
 }: LeaderboardScreenProps) {
     const currentEntry = useMemo(
         () =>
-            entries.find((entry) => entry.is_current_user) ??
+            entries.find((entry) => entry.telegram_id === currentTelegramId) ??
             (myRank
                 ? {
                       ...myRank.user,
@@ -56,7 +56,7 @@ export default function LeaderboardScreen({
                       is_current_user: true,
                   }
                 : null),
-        [entries, myRank]
+        [currentTelegramId, entries, myRank]
     );
     const nextAbove = useMemo(() => {
         if (!currentEntry) return null;
@@ -124,9 +124,7 @@ export default function LeaderboardScreen({
                     </div>
                 )}
                 {entries.map((user, index) => {
-                    const isCurrent =
-                        user.is_current_user ||
-                        user.telegram_id === currentTelegramId;
+                    const isCurrent = user.telegram_id === currentTelegramId;
                     const name = isCurrent ? currentName : athleteName(user);
                     const avatarUrl = isCurrent
                         ? currentAvatarUrl
